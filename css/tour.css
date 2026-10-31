@@ -98,3 +98,37 @@
 .tag-panel p { margin: 0 0 6px; }
 .psv-tooltip-content { font-family: var(--font-body); }
 .psv-container { font-family: var(--font-body); }
+
+/* 平面圖（瀏覽頁的小地圖、編輯器的平面圖共用） */
+:root {
+  --pv-backdrop: rgba(255, 255, 255, 0.04);
+  --pv-grid: rgba(255, 255, 255, 0.10);
+  --pv-link: rgba(255, 255, 255, 0.55);
+  --pv-node: #ffffff;
+  --pv-node-stroke: #0b0f0d;
+  --pv-here: #f0b02e;
+  --pv-text: #eef3ef;
+  --pv-halo: rgba(8, 12, 10, 0.85);
+  --pv-cone: rgba(240, 176, 46, 0.38);
+}
+.pv-backdrop { fill: var(--pv-backdrop); }
+.pv-image { opacity: 0.92; }
+.pv-grid line { stroke: var(--pv-grid); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.pv-link { stroke: var(--pv-link); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.pv-link.manual { stroke-dasharray: 5 4; }
+.pv-node { cursor: pointer; }
+.pv-node circle { fill: var(--pv-node); stroke: var(--pv-node-stroke); }
+.pv-node:hover circle, .pv-node:focus-visible circle { fill: var(--pv-here); }
+.pv-node:focus { outline: none; }
+.pv-node.here circle { fill: var(--pv-here); stroke: #fff; }
+.pv-node.hl circle { fill: var(--sel); }
+.pv-node text {
+  fill: var(--pv-text);
+  stroke: var(--pv-halo);
+  paint-order: stroke;
+  text-anchor: middle;
+  font-family: var(--font-body);
+  pointer-events: none;
+}
+.pv-cone { fill: var(--pv-cone); }
+.pv-cone.unknown { fill: rgba(255, 255, 255, 0.12); }

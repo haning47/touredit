@@ -73,6 +73,25 @@ body {
 .field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .field select option, .field select optgroup { color: #111; background: #fff; }
 
+.map {
+  position: fixed;
+  z-index: 115;
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  width: min(320px, calc(100% - 24px));
+  padding: 6px 8px 8px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.map-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); letter-spacing: 0.06em; }
+.map-head button { font: inherit; color: var(--muted); background: none; border: 0; padding: 2px 4px; cursor: pointer; }
+.map-head button:hover { color: var(--fg); }
+.map svg { display: block; width: 100%; height: 190px; margin-top: 4px; border-radius: 6px; }
+.map.collapsed svg { display: none; }
+
 .notice {
   position: fixed;
   inset: 0;
@@ -90,6 +109,7 @@ body {
   .bar h1 { width: 100%; font-size: 15px; }
   .field { flex: 1 1 140px; min-width: 0; }
   .field select { flex: 1; min-width: 0; max-width: none; width: 100%; }
+  .map svg { height: 150px; }
 }
 </style>
 </head>
@@ -101,6 +121,11 @@ body {
   <label class="field"><span>區域</span><select id="area-select"></select></label>
   <label class="field"><span>地點</span><select id="scene-select"></select></label>
 </header>
+
+<div class="map" id="map" hidden>
+  <div class="map-head"><span id="map-title">平面圖</span><button type="button" id="map-toggle" aria-expanded="true">收合</button></div>
+  <svg id="map-svg" role="img" aria-label="拍攝點平面圖"></svg>
+</div>
 
 <div class="notice" id="notice" hidden><p id="notice-text"></p></div>
 
@@ -116,7 +141,7 @@ body {
 <script type="module">
 import { Viewer } from '@photo-sphere-viewer/core';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
-import { Tour, Navigator, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, deg, LANG } from './js/tour.js';
+import { Tour, Navigator, PlanView, placed, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, deg, LANG } from './js/tour.js';
 
 const $ = (id) => document.getElementById(id);
 function notice(msg) { $('notice-text').textContent = msg; $('notice').hidden = false; }
@@ -161,11 +186,34 @@ function fillScenes(area) {
     sel.appendChild(o);
   }
 }
+/* ---------------------------------------------------------- 小地圖 */
+const plan = new PlanView($('map-svg'), { tour, resolve, labels: 'current', onNode: (s) => nav.jump(s.id) });
+if (window.matchMedia('(max-width: 600px)').matches) {
+  $('map').classList.add('collapsed');
+  $('map-toggle').textContent = '展開';
+}
+$('map-toggle').addEventListener('click', () => {
+  const c = $('map').classList.toggle('collapsed');
+  $('map-toggle').textContent = c ? '展開' : '收合';
+  $('map-toggle').setAttribute('aria-expanded', String(!c));
+  if (!c) plan.render();
+});
+function syncMap(scene) {
+  const area = tour.areaOf(scene.id);
+  const show = area.scenes.some(placed) && placed(scene);
+  $('map').hidden = !show;
+  if (!show) return;
+  $('map-title').textContent = area.name;
+  plan.current = scene;
+  plan.setArea(area);
+}
+
 function syncSelects(scene) {
   const area = tour.areaOf(scene.id);
   if ($('area-select').value !== area.id) $('area-select').value = area.id;
   fillScenes(area);
   $('scene-select').value = scene.id;
+  syncMap(scene);
   document.title = scene.name + '｜' + (data.title || '環景導覽');
   try { history.replaceState(null, '', '#' + encodeURIComponent(scene.id)); } catch (e) { /* 忽略 */ }
 }
@@ -196,6 +244,8 @@ try {
   throw e;
 }
 const markers = viewer.getPlugin(MarkersPlugin);
+
+viewer.addEventListener('position-updated', ({ position }) => plan.setView(deg(position.yaw)));
 
 function build(scene) {
   const list = (scene.links || []).map((l, i) => linkMarker(tour, scene, l, i));
