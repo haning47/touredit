@@ -1,0 +1,652 @@
+{
+  "title": "松山高中720環景",
+  "cameraHeight": 1.5,
+  "start": "home-0",
+  "areas": [
+    {
+      "id": "home",
+      "name": "首頁",
+      "start": "home-0",
+      "scenes": [
+        {
+          "id": "home-0",
+          "name": "松山高中",
+          "file": "panos/home-0.jpg",
+          "view": {
+            "yaw": 170.33,
+            "pitch": 13.21
+          },
+          "links": [],
+          "tags": [
+            {
+              "yaw": -170.39,
+              "pitch": 15.7,
+              "title": "松山高中簡介",
+              "text": "前身為臺北市松山初級中學\n民國78年改制為高中\n校慶為 11月12日\n坐落在捷運市政府站附近 交通便利\n校徽",
+              "images": [
+                "images/home-0-1-1.jpg"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "campus",
+      "name": "校園巡禮",
+      "start": "campus-0",
+      "scenes": [
+        {
+          "id": "campus-0",
+          "name": "校門口",
+          "file": "panos/campus-0.jpg",
+          "view": {
+            "yaw": -99.18,
+            "pitch": 12.38
+          },
+          "links": [
+            {
+              "yaw": -98.5,
+              "pitch": 8.51,
+              "to": "campus-2"
+            },
+            {
+              "yaw": -51.62,
+              "pitch": -8.27,
+              "to": "campus-1"
+            },
+            {
+              "yaw": -120.09,
+              "pitch": -18.4,
+              "to": "campus-16"
+            }
+          ],
+          "tags": [
+            {
+              "yaw": -52.59,
+              "pitch": 32.66,
+              "title": "圖書館",
+              "text": "一樓展覽\n二樓書庫",
+              "images": [
+                "images/campus-0-1-1.jpg"
+              ]
+            },
+            {
+              "yaw": -158.97,
+              "pitch": 23.62,
+              "title": "行政大樓",
+              "text": "一樓總務處 健康中心\n二樓教務處\n三樓校長室\n四樓輔導室\n五樓校史室",
+              "images": []
+            }
+          ]
+        },
+        {
+          "id": "campus-1",
+          "name": "校門口北側",
+          "file": "panos/campus-1.jpg",
+          "view": {
+            "yaw": -33.88,
+            "pitch": -6.48
+          },
+          "links": [
+            {
+              "yaw": -17.69,
+              "pitch": -2.35,
+              "to": "campus-3"
+            },
+            {
+              "yaw": 4.9,
+              "pitch": -14.83,
+              "to": "campus-0"
+            },
+            {
+              "yaw": 17.56,
+              "pitch": 2.9,
+              "to": "campus-4"
+            },
+            {
+              "yaw": -164.24,
+              "pitch": -5.23,
+              "to": "campus-0"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-2",
+          "name": "校門口草坪",
+          "file": "panos/campus-2.jpg",
+          "view": {
+            "yaw": 11.02,
+            "pitch": 0.14
+          },
+          "links": [
+            {
+              "yaw": 18.26,
+              "pitch": -31.38,
+              "to": "campus-0"
+            },
+            {
+              "yaw": -160.58,
+              "pitch": -0.25,
+              "to": "campus-0"
+            },
+            {
+              "yaw": 61.81,
+              "pitch": 5.48,
+              "to": "campus-6"
+            },
+            {
+              "yaw": -43.44,
+              "pitch": 8.04,
+              "to": "campus-7"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-3",
+          "name": "往中庭",
+          "file": "panos/campus-3.jpg",
+          "view": {
+            "yaw": 0.0,
+            "pitch": -0.0
+          },
+          "links": [
+            {
+              "yaw": -13.95,
+              "pitch": -31.28,
+              "to": "campus-1"
+            },
+            {
+              "yaw": 166.31,
+              "pitch": 1.48,
+              "to": "campus-4"
+            },
+            {
+              "yaw": -20.36,
+              "pitch": 5.05,
+              "to": "campus-5"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-4",
+          "name": "往藝能大樓",
+          "file": "panos/campus-4.jpg",
+          "view": {
+            "yaw": 97.11,
+            "pitch": -9.57
+          },
+          "links": [
+            {
+              "yaw": 154.12,
+              "pitch": -25.56,
+              "to": "campus-1"
+            },
+            {
+              "yaw": 92.58,
+              "pitch": 8.51,
+              "to": "campus-10"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-5",
+          "name": "中庭",
+          "file": "panos/campus-5.jpg",
+          "view": {
+            "yaw": 2.28,
+            "pitch": -14.5
+          },
+          "links": [
+            {
+              "yaw": 34.72,
+              "pitch": -39.42,
+              "to": "campus-3"
+            },
+            {
+              "yaw": -177.41,
+              "pitch": -7.93,
+              "to": "campus-3"
+            },
+            {
+              "yaw": 1.97,
+              "pitch": 9.34,
+              "to": "campus-9"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-6",
+          "name": "操場北側",
+          "file": "panos/campus-6.jpg",
+          "view": {
+            "yaw": 0.0,
+            "pitch": -0.0
+          },
+          "links": [
+            {
+              "yaw": 22.06,
+              "pitch": 6.1,
+              "to": "campus-2"
+            },
+            {
+              "yaw": -78.67,
+              "pitch": 1.37,
+              "to": "campus-8"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-7",
+          "name": "操場南側",
+          "file": "panos/campus-7.jpg",
+          "view": {
+            "yaw": 0.0,
+            "pitch": -0.0
+          },
+          "links": [
+            {
+              "yaw": 23.41,
+              "pitch": 3.56,
+              "to": "campus-2"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-8",
+          "name": "資源回收場",
+          "file": "panos/campus-8.jpg",
+          "view": {
+            "yaw": 16.7,
+            "pitch": -4.87
+          },
+          "links": [
+            {
+              "yaw": -12.18,
+              "pitch": 6.37,
+              "to": "campus-6"
+            },
+            {
+              "yaw": 169.13,
+              "pitch": 3.2,
+              "to": "campus-4"
+            },
+            {
+              "yaw": 45.48,
+              "pitch": -22.17,
+              "to": "campus-9"
+            }
+          ],
+          "tags": [
+            {
+              "yaw": -105.36,
+              "pitch": 27.93,
+              "title": "視聽大樓",
+              "text": "一樓大講堂\n二三樓視聽教室\n四樓地科教室 電腦教室四\n五樓語言教室",
+              "images": [
+                "images/campus-8-1-1.jpg"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "campus-9",
+          "name": "往視聽大樓",
+          "file": "panos/campus-9.jpg",
+          "view": {
+            "yaw": 0.0,
+            "pitch": -0.0
+          },
+          "links": [
+            {
+              "yaw": 3.38,
+              "pitch": -32.06,
+              "to": "campus-8"
+            },
+            {
+              "yaw": 25.7,
+              "pitch": -0.23,
+              "to": "campus-10"
+            },
+            {
+              "yaw": -134.01,
+              "pitch": -4.94,
+              "to": "campus-8"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-10",
+          "name": "藝能大樓",
+          "file": "panos/campus-10.jpg",
+          "view": {
+            "yaw": 9.96,
+            "pitch": -13.8
+          },
+          "links": [
+            {
+              "yaw": 0.17,
+              "pitch": 12.06,
+              "to": "campus-4"
+            },
+            {
+              "yaw": -50.54,
+              "pitch": 25.53,
+              "to": "campus-12"
+            },
+            {
+              "yaw": -178.02,
+              "pitch": -3.42,
+              "to": "campus-9"
+            },
+            {
+              "yaw": 30.07,
+              "pitch": -14.04,
+              "to": "campus-9"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-11-2",
+          "name": "空中走廊2樓",
+          "file": "panos/campus-11-2.jpg",
+          "view": {
+            "yaw": 26.63,
+            "pitch": -8.06
+          },
+          "links": [
+            {
+              "yaw": 59.49,
+              "pitch": -3.92,
+              "to": "campus-12"
+            },
+            {
+              "yaw": 75.0,
+              "pitch": -27.09,
+              "to": "campus-15-2"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-12",
+          "name": "家政教室走廊",
+          "file": "panos/campus-12.jpg",
+          "view": {
+            "yaw": -139.48,
+            "pitch": -9.82
+          },
+          "links": [
+            {
+              "yaw": 169.14,
+              "pitch": -9.19,
+              "to": "campus-10"
+            },
+            {
+              "yaw": 110.27,
+              "pitch": 1.21,
+              "to": "campus-11-2"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-13",
+          "name": "電腦教室二走廊",
+          "file": "panos/campus-13.jpg",
+          "view": {
+            "yaw": 38.92,
+            "pitch": -13.82
+          },
+          "links": [
+            {
+              "yaw": 175.62,
+              "pitch": -7.2,
+              "to": "campus-15-2"
+            },
+            {
+              "yaw": 32.59,
+              "pitch": 4.82,
+              "to": "campus-6"
+            },
+            {
+              "yaw": 96.63,
+              "pitch": -27.56,
+              "to": "campus-15-2"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-14-1",
+          "name": "圖書館1樓",
+          "file": "panos/campus-14-1.jpg",
+          "view": {
+            "yaw": -105.22,
+            "pitch": -4.3
+          },
+          "links": [
+            {
+              "yaw": 106.28,
+              "pitch": -9.9,
+              "to": "campus-15-2"
+            },
+            {
+              "yaw": 59.65,
+              "pitch": -1.06,
+              "to": "campus-0"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-15-2",
+          "name": "圖書館2樓",
+          "file": "panos/campus-15-2.jpg",
+          "view": {
+            "yaw": -136.84,
+            "pitch": -2.53
+          },
+          "links": [
+            {
+              "yaw": -121.41,
+              "pitch": -11.01,
+              "to": "campus-14-1"
+            },
+            {
+              "yaw": -9.51,
+              "pitch": -6.3,
+              "to": "campus-11-2"
+            },
+            {
+              "yaw": -15.02,
+              "pitch": 13.81,
+              "to": "campus-13"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-16",
+          "name": "松高前",
+          "file": "panos/campus-16.jpg",
+          "view": {
+            "yaw": 0.0,
+            "pitch": -0.0
+          },
+          "links": [
+            {
+              "yaw": -11.0,
+              "pitch": 3.31,
+              "to": "campus-0"
+            },
+            {
+              "yaw": 38.29,
+              "pitch": -20.77,
+              "to": "campus-17"
+            },
+            {
+              "yaw": -135.41,
+              "pitch": -3.45,
+              "to": "campus-17"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "campus-17",
+          "name": "革新公園",
+          "file": "panos/campus-17.jpg",
+          "view": {
+            "yaw": 18.06,
+            "pitch": 4.02
+          },
+          "links": [
+            {
+              "yaw": 54.93,
+              "pitch": -13.06,
+              "to": "campus-16"
+            }
+          ],
+          "tags": [
+            {
+              "yaw": 112.84,
+              "pitch": 7.78,
+              "title": "革新公園",
+              "text": "本公園屬中生代公園。公園面積：1585平方公尺。於民國76年開闢，84年7月1日接收",
+              "images": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "audio",
+      "name": "視聽大樓",
+      "start": "audio-0-4",
+      "scenes": [
+        {
+          "id": "audio-0-4",
+          "name": "視聽4樓",
+          "file": "panos/audio-0-4.jpg",
+          "view": {
+            "yaw": 68.81,
+            "pitch": -4.98
+          },
+          "links": [
+            {
+              "yaw": 30.16,
+              "pitch": 8.36,
+              "to": "audio-1-5"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "audio-1-5",
+          "name": "視聽5樓",
+          "file": "panos/audio-1-5.jpg",
+          "view": {
+            "yaw": 61.43,
+            "pitch": -10.94
+          },
+          "links": [
+            {
+              "yaw": 95.36,
+              "pitch": -2.47,
+              "to": "audio-3"
+            },
+            {
+              "yaw": -169.73,
+              "pitch": -17.24,
+              "to": "audio-0-4"
+            }
+          ],
+          "tags": [
+            {
+              "yaw": -53.66,
+              "pitch": 10.09,
+              "title": "視聽大樓五樓",
+              "text": "語言教室一\n語言教室二",
+              "images": []
+            },
+            {
+              "yaw": 56.95,
+              "pitch": 16.69,
+              "title": "電腦教室三",
+              "text": "高二生活科技\n高三科技領域課程",
+              "images": []
+            },
+            {
+              "yaw": 112.63,
+              "pitch": 4.69,
+              "title": "電腦教室二",
+              "text": "高一資訊科技\n高二進階程式設計\n高三科技領域課程",
+              "images": []
+            }
+          ]
+        },
+        {
+          "id": "audio-0",
+          "name": "往視聽大樓",
+          "file": "panos/audio-0.jpg",
+          "view": {
+            "yaw": 111.29,
+            "pitch": 14.38
+          },
+          "links": [
+            {
+              "yaw": 112.37,
+              "pitch": 13.31,
+              "to": "audio-0-4"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "audio-2",
+          "name": "電腦二內部",
+          "file": "panos/audio-2.jpg",
+          "view": {
+            "yaw": -173.29,
+            "pitch": -10.73
+          },
+          "links": [
+            {
+              "yaw": -141.49,
+              "pitch": 2.07,
+              "to": "audio-3"
+            }
+          ],
+          "tags": []
+        },
+        {
+          "id": "audio-3",
+          "name": "電二走廊",
+          "file": "panos/audio-3.jpg",
+          "view": {
+            "yaw": 0.0,
+            "pitch": -0.0
+          },
+          "links": [
+            {
+              "yaw": 20.03,
+              "pitch": 5.8,
+              "to": "audio-2"
+            }
+          ],
+          "tags": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+/* 環景導覽共用樣式：地上白圈、標籤圓點、說明面板 */
+:root {
+  --tag: #f0b02e;
+  --sel: #ff7a45;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+[hidden] { display: none !important; }
+
+/* 地上的白圈（前往其他場景） */
+.floor-ring {
+  fill: rgba(255, 255, 255, 0.16) !important;
+  stroke: rgba(255, 255, 255, 0.95) !important;
+  stroke-width: 2.5px !important;
+  cursor: pointer;
+  transition: fill 0.15s ease;
+}
+.floor-ring:hover { fill: rgba(255, 255, 255, 0.42) !important; }
+.floor-ring.is-selected { stroke: var(--sel) !important; stroke-width: 3.5px !important; fill: rgba(255, 122, 69, 0.25) !important; }
+.floor-ring.is-broken { stroke: #ff5050 !important; stroke-dasharray: 6 4; }
+
+/* 直立的圓圈（目標在水平線以上，例如往樓上） */
+.go-ring {
+  display: block;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.go-ring::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 12px;
+  height: 12px;
+  border-left: 3px solid #fff;
+  border-top: 3px solid #fff;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.go-ring:hover { background: rgba(255, 255, 255, 0.42); }
+.go-marker.is-selected .go-ring { border-color: var(--sel); background: rgba(255, 122, 69, 0.3); }
+.go-marker.is-broken .go-ring { border-color: #ff5050; border-style: dashed; }
+
+/* 滑鼠在地面移動時的游標圈 */
+.floor-cursor {
+  fill: rgba(255, 255, 255, 0.08) !important;
+  stroke: rgba(255, 255, 255, 0.75) !important;
+  stroke-width: 1.5px !important;
+  pointer-events: none !important;
+}
+
+/* 標籤圓點 */
+.tag-dot {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--tag);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  position: relative;
+}
+.tag-dot::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: #fff;
+}
+.tag-dot::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  animation: tag-ping 2.4s ease-out infinite;
+}
+.tag-marker.is-selected .tag-dot { background: var(--sel); box-shadow: 0 0 0 3px rgba(255, 122, 69, 0.5); }
+@keyframes tag-ping {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  80%, 100% { transform: scale(1.25); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tag-dot::before { animation: none; opacity: 0; }
+}
+
+/* 標籤點開後的說明面板（Photo Sphere Viewer 側邊面板） */
+.tag-panel { font-family: var(--font-body); line-height: 1.75; }
+.tag-panel img { display: block; width: 100%; height: auto; border-radius: 6px; margin-bottom: 12px; }
+.tag-panel h2 { margin: 4px 0 8px; font-size: 20px; letter-spacing: 0.04em; }
+.tag-panel p { margin: 0 0 6px; }
+.psv-tooltip-content { font-family: var(--font-body); }
+.psv-container { font-family: var(--font-body); }

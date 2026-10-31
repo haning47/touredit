@@ -1,0 +1,1284 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>環景導覽編輯器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/psv.css">
+<link rel="stylesheet" href="css/tour.css">
+<style>
+/* 版面：左側場景列表、中間全景、右側屬性面板，像 Marzipano Tool */
+:root {
+  --bg: #eef1ed;
+  --panel: #fbfcfa;
+  --ink: #1b2520;
+  --muted: #5c6a62;
+  --line: #d5dcd4;
+  --accent: #2a7350;
+  --accent-ink: #ffffff;
+  --danger: #b4322b;
+  --hover: #e4ebe4;
+  --stage: #0b0f0d;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1412;
+    --panel: #161d19;
+    --ink: #e4ebe6;
+    --muted: #97a79e;
+    --line: #2a3530;
+    --accent: #5cc08e;
+    --accent-ink: #0b1a12;
+    --danger: #f07468;
+    --hover: #1f2823;
+    color-scheme: dark;
+  }
+}
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: 290px minmax(0, 1fr) 330px;
+}
+
+/* ---- 頂端列 ---- */
+.top {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.top h1 { margin: 0; font-size: 16px; letter-spacing: 0.05em; }
+.folder { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+.spacer { flex: 1; }
+.status { font-size: 13px; color: var(--muted); }
+.status.dirty { color: var(--danger); font-weight: 500; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--hover); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.btn.danger { color: var(--danger); }
+.btn.danger.solid { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.small { padding: 3px 9px; font-size: 12.5px; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .scene-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- 左側 ---- */
+.side {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.side-block { padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.label { font-size: 12px; color: var(--muted); letter-spacing: 0.06em; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.input, select.input, textarea.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
+.inline-form { display: grid; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: 6px; }
+
+.scene-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; min-height: 120px; }
+.scene-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.scene-row:hover { background: var(--hover); }
+.scene-row[aria-current="true"] { background: var(--accent); color: var(--accent-ink); }
+.scene-row .thumb {
+  width: 76px;
+  height: 38px;
+  border-radius: 4px;
+  background: #2b332e center / cover no-repeat;
+}
+.scene-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-row .meta { font-size: 11.5px; opacity: 0.75; }
+.star { font-size: 12px; padding: 0 4px; border-radius: 3px; background: var(--tag); color: #2a1e04; }
+.drop {
+  margin: 0 14px 14px;
+  padding: 14px;
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.drop.over { border-color: var(--accent); color: var(--ink); background: var(--hover); }
+.check { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
+
+/* ---- 中間舞台 ---- */
+.stage { position: relative; background: var(--stage); min-height: 0; }
+#viewer { position: absolute; inset: 0; }
+.stage.placing .psv-container, .stage.placing .psv-canvas-container { cursor: crosshair !important; }
+.toolbar {
+  position: absolute;
+  z-index: 120;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+  max-width: calc(100% - 24px);
+  background: rgba(12, 17, 15, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9px;
+  backdrop-filter: blur(6px);
+}
+.tool {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1f5f2;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tool:hover { background: rgba(255, 255, 255, 0.16); }
+.tool[aria-pressed="true"] { background: var(--tag); border-color: var(--tag); color: #241a04; font-weight: 500; }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.hint {
+  position: absolute;
+  z-index: 120;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--tag);
+  color: #241a04;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.toast {
+  position: absolute;
+  z-index: 125;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: rgba(12, 17, 15, 0.88);
+  color: #f1f5f2;
+  font-size: 13px;
+  max-width: calc(100% - 40px);
+}
+.empty-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #cfd9d2;
+  text-align: center;
+  background: var(--stage);
+}
+.empty-stage p { max-width: 30em; margin: 0 0 12px; line-height: 1.75; }
+
+/* ---- 右側 ---- */
+.inspect {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+  min-height: 0;
+}
+.inspect section { padding: 14px 16px; display: grid; gap: 10px; border-bottom: 1px solid var(--line); }
+.inspect h2 { margin: 0; font-size: 15px; letter-spacing: 0.04em; display: flex; align-items: center; gap: 8px; }
+.inspect h2 .kind { font-size: 11.5px; font-weight: 500; padding: 1px 7px; border-radius: 4px; background: var(--hover); color: var(--muted); }
+.back { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; justify-self: start; }
+.field { display: grid; gap: 4px; }
+.mono { font-family: var(--font-mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+.note { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 0; }
+.note.ok { color: var(--accent); }
+.note.warn { color: var(--danger); }
+.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.items button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+.items button:hover { background: var(--hover); }
+.items .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--tag); flex: none; }
+.items .ring { width: 12px; height: 7px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+.imgs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.imgs figure { margin: 0; position: relative; aspect-ratio: 4 / 3; max-width: 100%; border-radius: 5px; overflow: hidden; background: var(--hover); }
+.imgs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.imgs .x {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  cursor: pointer;
+  line-height: 22px;
+  padding: 0;
+}
+.imgs .mv { position: absolute; bottom: 3px; left: 3px; display: flex; gap: 3px; }
+.imgs .mv button { width: 22px; height: 22px; border-radius: 4px; border: 0; background: rgba(0, 0, 0, 0.65); color: #fff; cursor: pointer; padding: 0; }
+.confirm { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--danger); border-radius: 7px; }
+.welcome { padding: 18px 16px; display: grid; gap: 10px; }
+.welcome ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+
+@media (max-width: 1100px) {
+  .app { grid-template-columns: 250px minmax(0, 1fr) 290px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>環景導覽編輯器</h1>
+    <span class="folder" id="folder-name">尚未開啟資料夾</span>
+    <button class="btn" id="open-btn" type="button">開啟資料夾</button>
+    <button class="btn" id="reopen-btn" type="button" hidden></button>
+    <span class="spacer"></span>
+    <span class="status" id="status" aria-live="polite"></span>
+    <button class="btn primary" id="save-btn" type="button" disabled>儲存</button>
+  </header>
+
+  <aside class="side">
+    <div class="side-block">
+      <label class="field"><span class="label">導覽名稱</span><input class="input" id="tour-title" type="text" disabled></label>
+      <label class="field"><span class="label">相機離地高度（公尺，影響白圈遠近）</span><input class="input" id="tour-height" type="number" min="0.5" max="3" step="0.05" disabled></label>
+    </div>
+    <div class="side-block">
+      <span class="label">區域</span>
+      <select class="input" id="area-select" disabled aria-label="區域"></select>
+      <div class="row">
+        <button class="btn small" id="area-add" type="button" disabled>新增區域</button>
+        <button class="btn small" id="area-rename" type="button" disabled>重新命名</button>
+        <button class="btn small danger" id="area-del" type="button" disabled>刪除區域</button>
+      </div>
+      <div class="inline-form" id="area-form" hidden>
+        <input class="input" id="area-name" type="text" aria-label="區域名稱">
+        <div class="row"><button class="btn small primary" id="area-ok" type="button">確定</button><button class="btn small" id="area-cancel" type="button">取消</button></div>
+      </div>
+      <div class="confirm" id="area-confirm" hidden>
+        <span id="area-confirm-text"></span>
+        <div class="row"><button class="btn small danger solid" id="area-del-ok" type="button">刪除</button><button class="btn small" id="area-del-cancel" type="button">取消</button></div>
+      </div>
+    </div>
+    <ul class="scene-list" id="scene-list" aria-label="場景"></ul>
+    <div class="drop" id="drop">
+      <span>把全景照片拖曳到這裡，或</span>
+      <button class="btn small primary" id="add-scene" type="button" disabled>新增場景</button>
+      <label class="check"><input type="checkbox" id="opt-resize" checked>寬度超過 8192 時自動縮小</label>
+    </div>
+    <input type="file" id="file-pano" accept="image/jpeg,image/png,image/webp" multiple hidden>
+    <input type="file" id="file-replace" accept="image/jpeg,image/png,image/webp" hidden>
+    <input type="file" id="file-tagimg" accept="image/jpeg,image/png,image/webp" multiple hidden>
+  </aside>
+
+  <main class="stage" id="stage">
+    <div id="viewer"></div>
+    <div class="toolbar">
+      <button class="tool" id="tool-view" type="button" disabled>設為進入視角</button>
+      <button class="tool" id="tool-link" type="button" aria-pressed="false" disabled>＋ 白圈</button>
+      <button class="tool" id="tool-tag" type="button" aria-pressed="false" disabled>＋ 標籤</button>
+      <button class="tool" id="tool-preview" type="button" aria-pressed="false" disabled>預覽模式</button>
+    </div>
+    <div class="hint" id="hint" hidden></div>
+    <div class="toast" id="toast" hidden></div>
+    <div class="empty-stage" id="empty-stage">
+      <div>
+        <p id="empty-text">按左上角「開啟資料夾」，選擇放導覽的資料夾（裡面有 tour.json 的那個，或一個新的空資料夾）。</p>
+      </div>
+    </div>
+  </main>
+
+  <aside class="inspect" id="inspect">
+    <div class="welcome" id="welcome">
+      <strong>使用方式</strong>
+      <ol>
+        <li>開啟資料夾，左側會列出各區域的場景。</li>
+        <li>拖曳全景照片到左下方新增場景。</li>
+        <li>按「＋ 白圈」再點地面，選要走到哪個場景。</li>
+        <li>按「＋ 標籤」再點位置，填標題、說明、加圖片。</li>
+        <li>按「儲存」寫回資料夾，再上傳到網站。</li>
+      </ol>
+      <p class="note">需要電腦版 Chrome 或 Edge。編輯器直接讀寫你選的資料夾，不會上傳到任何地方。</p>
+    </div>
+    <div id="panel"></div>
+  </aside>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.module.js",
+    "@photo-sphere-viewer/markers-plugin": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/markers-plugin@5.15.1/index.module.js"
+  }
+}
+</script>
+<script type="module">
+import { Viewer } from '@photo-sphere-viewer/core';
+import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
+import { Tour, Navigator, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, deg, rad, round1, norm180, esc, LANG } from './js/tour.js';
+
+const $ = (id) => document.getElementById(id);
+const VIEWER_FILES = ['index.html', 'editor.html', 'js/tour.js', 'css/psv.css', 'css/tour.css'];
+
+/* ================================================================ 狀態 */
+let dir = null;            // 使用者選的資料夾
+let data = null;           // tour.json 內容
+let tour = null;
+let viewer = null;
+let markers = null;
+let nav = null;
+let currentArea = null;
+let selection = null;      // { kind: 'link' | 'tag', index }
+let mode = null;           // 'link' | 'tag' | 'move'
+let preview = false;
+let dirty = false;
+let pendingAfterLink = null;
+const urls = new Map();    // 路徑 → objectURL
+const thumbs = new Map();  // 場景 id → 縮圖 objectURL
+const pendingDeletes = new Set();
+
+/* ================================================================ 檔案 */
+async function dirOf(path, create) {
+  const parts = path.split('/').filter(Boolean);
+  parts.pop();
+  let d = dir;
+  for (const p of parts) d = await d.getDirectoryHandle(p, { create });
+  return d;
+}
+async function readFile(path) {
+  const d = await dirOf(path, false);
+  const fh = await d.getFileHandle(path.split('/').pop());
+  return fh.getFile();
+}
+async function writeFile(path, blob) {
+  const d = await dirOf(path, true);
+  const fh = await d.getFileHandle(path.split('/').pop(), { create: true });
+  const w = await fh.createWritable();
+  await w.write(blob);
+  await w.close();
+}
+async function exists(path) {
+  try { await readFile(path); return true; } catch (e) { return false; }
+}
+async function removeFile(path) {
+  try {
+    const d = await dirOf(path, false);
+    await d.removeEntry(path.split('/').pop());
+  } catch (e) { /* 已經不存在 */ }
+}
+async function ensureUrl(path) {
+  if (!path) return '';
+  if (urls.has(path)) return urls.get(path);
+  const f = await readFile(path);
+  const u = URL.createObjectURL(f);
+  urls.set(path, u);
+  return u;
+}
+const resolve = (p) => urls.get(p) || '';
+async function ensureSceneAssets(scene) {
+  await ensureUrl(scene.file);
+  for (const t of scene.tags || []) for (const p of t.images || []) {
+    try { await ensureUrl(p); } catch (e) { /* 圖片遺失 */ }
+  }
+}
+
+const uid = (prefix) => prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+async function toCanvasBlob(bmp, w, h, quality) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  return new Promise((ok, fail) => c.toBlob((b) => (b ? ok(b) : fail(new Error('encode'))), 'image/jpeg', quality));
+}
+async function makeThumb(bmp) {
+  const b = await toCanvasBlob(bmp, 256, 128, 0.8);
+  return URL.createObjectURL(b);
+}
+/* 全景圖：檢查比例、太大時縮小，轉成 JPG */
+async function preparePano(file) {
+  const bmp = await createImageBitmap(file);
+  const w = bmp.width;
+  const h = bmp.height;
+  let blob = file;
+  let note = '';
+  if (Math.abs(w / h - 2) > 0.03) note = `「${file.name}」不是 2:1 的全景圖（${w}×${h}），畫面可能會變形。`;
+  if ($('opt-resize').checked && w > 8192) blob = await toCanvasBlob(bmp, 8192, Math.round((8192 * h) / w), 0.88);
+  else if (file.type !== 'image/jpeg') blob = await toCanvasBlob(bmp, w, h, 0.9);
+  const thumb = await makeThumb(bmp);
+  bmp.close();
+  return { blob, thumb, note };
+}
+/* 標籤圖片：寬度最多 1600 */
+async function prepareTagImage(file) {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(1, 1600 / bmp.width);
+  const blob = await toCanvasBlob(bmp, Math.round(bmp.width * s), Math.round(bmp.height * s), 0.86);
+  bmp.close();
+  return blob;
+}
+
+/* ================================================================ 介面小工具 */
+let toastTimer = 0;
+function toast(msg, ms = 3200) {
+  $('toast').textContent = msg;
+  $('toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, ms);
+}
+function markDirty() {
+  dirty = true;
+  $('status').textContent = '有未儲存的變更';
+  $('status').classList.add('dirty');
+  $('save-btn').disabled = false;
+}
+function markSaved(msg = '已儲存') {
+  dirty = false;
+  $('status').textContent = msg;
+  $('status').classList.remove('dirty');
+  $('save-btn').disabled = true;
+}
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in attrs) {
+    if (k === 'class') e.className = attrs[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
+    else if (attrs[k] === true) e.setAttribute(k, '');
+    else if (attrs[k] !== false && attrs[k] != null) e.setAttribute(k, attrs[k]);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+function setEnabled(on) {
+  for (const id of ['tour-title', 'tour-height', 'area-select', 'area-add', 'area-rename', 'area-del', 'add-scene']) $(id).disabled = !on;
+}
+function toolsEnabled(on) {
+  for (const id of ['tool-view', 'tool-link', 'tool-tag', 'tool-preview']) $(id).disabled = !on;
+}
+
+/* ================================================================ 開啟資料夾 */
+const supported = 'showDirectoryPicker' in window;
+if (!supported) {
+  $('open-btn').disabled = true;
+  $('empty-text').textContent = '這個瀏覽器不支援直接讀寫資料夾。請用電腦版 Chrome 或 Edge 開啟編輯器，並透過 http://localhost 或 https 網址開啟。';
+}
+
+function idb() {
+  return new Promise((ok, fail) => {
+    const r = indexedDB.open('tour-editor', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => fail(r.error);
+  });
+}
+async function kvSet(k, v) {
+  try {
+    const db = await idb();
+    db.transaction('kv', 'readwrite').objectStore('kv').put(v, k);
+  } catch (e) { /* 無法記住也沒關係 */ }
+}
+async function kvGet(k) {
+  try {
+    const db = await idb();
+    return await new Promise((ok) => {
+      const r = db.transaction('kv').objectStore('kv').get(k);
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => ok(null);
+    });
+  } catch (e) { return null; }
+}
+
+$('open-btn').addEventListener('click', async () => {
+  if (dirty && !confirmLeave()) return;
+  try {
+    const h = await window.showDirectoryPicker({ id: 'tour', mode: 'readwrite' });
+    await openProject(h);
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('無法開啟資料夾：' + e.message);
+  }
+});
+let lastHandle = null;
+(async () => {
+  if (!supported) return;
+  lastHandle = await kvGet('last');
+  if (lastHandle) {
+    $('reopen-btn').textContent = '繼續編輯「' + lastHandle.name + '」';
+    $('reopen-btn').hidden = false;
+  }
+})();
+$('reopen-btn').addEventListener('click', async () => {
+  if (!lastHandle) return;
+  try {
+    let p = await lastHandle.queryPermission({ mode: 'readwrite' });
+    if (p !== 'granted') p = await lastHandle.requestPermission({ mode: 'readwrite' });
+    if (p === 'granted') await openProject(lastHandle);
+  } catch (e) { toast('無法開啟上次的資料夾，請重新選擇。'); }
+});
+let leaveArmed = false;
+function confirmLeave() {
+  if (leaveArmed) { leaveArmed = false; return true; }
+  leaveArmed = true;
+  toast('還有未儲存的變更。再按一次就會放棄這些變更。', 4000);
+  setTimeout(() => { leaveArmed = false; }, 4000);
+  return false;
+}
+
+async function openProject(handle) {
+  dir = handle;
+  for (const u of urls.values()) URL.revokeObjectURL(u);
+  urls.clear();
+  thumbs.clear();
+  pendingDeletes.clear();
+  let fresh = false;
+  try {
+    data = JSON.parse(await (await readFile('tour.json')).text());
+  } catch (e) {
+    data = { title: '環景導覽', cameraHeight: 1.5, start: '', areas: [{ id: uid('area'), name: '區域 1', start: '', scenes: [] }] };
+    fresh = true;
+  }
+  data.areas = data.areas || [];
+  if (!data.areas.length) data.areas.push({ id: uid('area'), name: '區域 1', start: '', scenes: [] });
+  for (const a of data.areas) {
+    a.scenes = a.scenes || [];
+    for (const s of a.scenes) { s.links = s.links || []; s.tags = s.tags || []; s.view = s.view || { yaw: 0, pitch: 0 }; }
+  }
+  tour = new Tour(data);
+  kvSet('last', handle);
+  $('reopen-btn').hidden = true;
+  $('folder-name').textContent = '資料夾：' + (handle.name || '（未命名）');
+  $('tour-title').value = data.title || '';
+  $('tour-height').value = data.cameraHeight || 1.5;
+  setEnabled(true);
+  $('welcome').hidden = true;
+  currentArea = tour.areaOf(tour.firstScene()?.id) || data.areas[0];
+  renderAreas();
+  renderScenes();
+  if (fresh) {
+    markDirty();
+    toast('這個資料夾還沒有 tour.json，儲存時會建立，並一起放入瀏覽頁需要的檔案。', 5000);
+  } else {
+    markSaved('已開啟');
+  }
+  const first = tour.firstScene();
+  if (first) await openScene(first.id); else showEmpty();
+  buildThumbs();
+}
+
+/* ================================================================ 儲存 */
+function referenced() {
+  const set = new Set();
+  for (const a of data.areas) for (const s of a.scenes) {
+    set.add(s.file);
+    for (const t of s.tags) for (const p of t.images || []) set.add(p);
+  }
+  return set;
+}
+async function save() {
+  if (!dir || !data) return;
+  try {
+    if (!tour.scene(data.start)) data.start = tour.firstScene()?.id || '';
+    for (const a of data.areas) if (!a.scenes.find((s) => s.id === a.start)) a.start = a.scenes[0]?.id || '';
+    await writeFile('tour.json', new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }));
+    const used = referenced();
+    for (const p of pendingDeletes) if (!used.has(p)) await removeFile(p);
+    pendingDeletes.clear();
+    let copied = 0;
+    for (const f of VIEWER_FILES) {
+      if (await exists(f)) continue;
+      try {
+        const r = await fetch(f, { cache: 'no-cache' });
+        if (r.ok) { await writeFile(f, await r.blob()); copied++; }
+      } catch (e) { /* 略過 */ }
+    }
+    markSaved('已儲存 ' + new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }));
+    if (copied) toast(`已一併放入瀏覽頁需要的 ${copied} 個檔案。`);
+  } catch (e) {
+    toast('儲存失敗：' + e.message, 6000);
+  }
+}
+$('save-btn').addEventListener('click', save);
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (dirty) save();
+  }
+  if (e.key === 'Escape') {
+    if (mode) setMode(null);
+    else if (selection) select(null);
+  }
+});
+window.addEventListener('beforeunload', (e) => {
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+$('tour-title').addEventListener('input', (e) => { data.title = e.target.value; markDirty(); });
+$('tour-height').addEventListener('change', (e) => {
+  const v = Number(e.target.value);
+  if (v >= 0.5 && v <= 3) { data.cameraHeight = v; markDirty(); nav?.refresh(); }
+});
+
+/* ================================================================ 區域 */
+function renderAreas() {
+  const sel = $('area-select');
+  sel.innerHTML = '';
+  for (const a of data.areas) sel.append(el('option', { value: a.id }, `${a.name}（${a.scenes.length}）`));
+  sel.value = currentArea.id;
+}
+$('area-select').addEventListener('change', (e) => {
+  currentArea = data.areas.find((a) => a.id === e.target.value);
+  renderScenes();
+  const s = tour.areaStart(currentArea);
+  if (s) openScene(s.id);
+});
+let areaFormMode = null;
+function showAreaForm(m) {
+  areaFormMode = m;
+  $('area-form').hidden = false;
+  $('area-confirm').hidden = true;
+  $('area-name').value = m === 'rename' ? currentArea.name : '';
+  $('area-name').placeholder = '例如：圖書館';
+  $('area-name').focus();
+}
+$('area-add').addEventListener('click', () => showAreaForm('add'));
+$('area-rename').addEventListener('click', () => showAreaForm('rename'));
+$('area-cancel').addEventListener('click', () => { $('area-form').hidden = true; });
+$('area-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('area-ok').click(); });
+$('area-ok').addEventListener('click', () => {
+  const name = $('area-name').value.trim();
+  if (!name) { $('area-name').focus(); return; }
+  if (areaFormMode === 'add') {
+    const a = { id: uid('area'), name, start: '', scenes: [] };
+    data.areas.push(a);
+    currentArea = a;
+    tour.reindex();
+    renderScenes();
+    showEmpty('「' + name + '」還沒有場景。把全景照片拖曳到左下方即可新增。');
+  } else {
+    currentArea.name = name;
+  }
+  $('area-form').hidden = true;
+  renderAreas();
+  markDirty();
+});
+$('area-del').addEventListener('click', () => {
+  if (data.areas.length <= 1) { toast('至少要保留一個區域。'); return; }
+  $('area-form').hidden = true;
+  $('area-confirm-text').textContent = currentArea.scenes.length
+    ? `刪除「${currentArea.name}」和裡面的 ${currentArea.scenes.length} 個場景？其他區域連到這些場景的白圈也會一併移除。`
+    : `刪除「${currentArea.name}」？`;
+  $('area-confirm').hidden = false;
+});
+$('area-del-cancel').addEventListener('click', () => { $('area-confirm').hidden = true; });
+$('area-del-ok').addEventListener('click', () => {
+  const area = currentArea;
+  for (const s of [...area.scenes]) removeScene(s.id, true);
+  data.areas = data.areas.filter((a) => a !== area);
+  tour.reindex();
+  currentArea = data.areas[0];
+  $('area-confirm').hidden = true;
+  renderAreas();
+  renderScenes();
+  const s = tour.areaStart(currentArea) || tour.firstScene();
+  if (s) openScene(s.id); else showEmpty();
+  markDirty();
+});
+
+/* ================================================================ 場景列表 */
+function renderScenes() {
+  const ul = $('scene-list');
+  ul.innerHTML = '';
+  for (const s of currentArea.scenes) {
+    const isStart = currentArea.start === s.id || (!currentArea.start && currentArea.scenes[0] === s);
+    const thumb = el('span', { class: 'thumb' });
+    if (thumbs.has(s.id)) thumb.style.backgroundImage = `url("${thumbs.get(s.id)}")`;
+    const li = el('li', {
+      class: 'scene-row',
+      tabindex: '0',
+      'data-id': s.id,
+      'aria-current': String(nav?.current?.id === s.id),
+      onclick: () => openScene(s.id),
+      onkeydown: (e) => { if (e.key === 'Enter') openScene(s.id); },
+    },
+    thumb,
+    el('span', { class: 'name' }, s.name, el('br'), el('span', { class: 'meta' }, `白圈 ${s.links.length}・標籤 ${s.tags.length}`)),
+    isStart ? el('span', { class: 'star', title: '區域起點' }, '起點') : null);
+    ul.append(li);
+  }
+  if (!currentArea.scenes.length) ul.append(el('li', { class: 'note', style: 'padding:10px' }, '這個區域還沒有場景。'));
+}
+function highlightRow() {
+  document.querySelectorAll('.scene-row').forEach((r) => r.setAttribute('aria-current', String(r.dataset.id === nav?.current?.id)));
+}
+async function buildThumbs() {
+  for (const a of data.areas) for (const s of a.scenes) {
+    if (thumbs.has(s.id)) continue;
+    try {
+      const f = await readFile(s.file);
+      const bmp = await createImageBitmap(f, { resizeWidth: 256, resizeHeight: 128, resizeQuality: 'medium' });
+      thumbs.set(s.id, await makeThumb(bmp));
+      bmp.close();
+      const row = document.querySelector(`.scene-row[data-id="${CSS.escape(s.id)}"] .thumb`);
+      if (row) row.style.backgroundImage = `url("${thumbs.get(s.id)}")`;
+    } catch (e) { /* 圖檔遺失 */ }
+  }
+}
+
+/* 新增場景 */
+$('add-scene').addEventListener('click', () => $('file-pano').click());
+$('file-pano').addEventListener('change', async (e) => {
+  await addScenes([...e.target.files]);
+  e.target.value = '';
+});
+const drop = $('drop');
+for (const t of [drop, $('scene-list')]) {
+  t.addEventListener('dragover', (e) => { if (!dir) return; e.preventDefault(); drop.classList.add('over'); });
+  t.addEventListener('dragleave', () => drop.classList.remove('over'));
+  t.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    if (dir) addScenes([...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')));
+  });
+}
+async function addScenes(files) {
+  if (!files.length) return;
+  let added = null;
+  for (const [i, f] of files.entries()) {
+    toast(`處理照片 ${i + 1}／${files.length}：${f.name}`, 60000);
+    try {
+      const { blob, thumb, note } = await preparePano(f);
+      const id = uid('s');
+      const path = `panos/${id}.jpg`;
+      await writeFile(path, blob);
+      urls.set(path, URL.createObjectURL(blob));
+      thumbs.set(id, thumb);
+      const scene = { id, name: f.name.replace(/\.[^.]+$/, ''), file: path, view: { yaw: 0, pitch: 0 }, links: [], tags: [] };
+      currentArea.scenes.push(scene);
+      if (!currentArea.start) currentArea.start = id;
+      if (!data.start) data.start = id;
+      added = added || scene;
+      if (note) toast(note, 6000);
+    } catch (err) {
+      toast(`「${f.name}」無法讀取：${err.message}`, 6000);
+    }
+  }
+  tour.reindex();
+  renderAreas();
+  renderScenes();
+  markDirty();
+  if (added) {
+    await openScene(added.id);
+    toast(files.length > 1 ? `已新增 ${files.length} 個場景。` : '已新增場景，可以在右側修改名稱。');
+  }
+}
+
+function removeScene(id, quiet) {
+  const area = tour.areaOf(id);
+  const s = tour.scene(id);
+  if (!s) return 0;
+  area.scenes = area.scenes.filter((x) => x.id !== id);
+  pendingDeletes.add(s.file);
+  for (const t of s.tags) for (const p of t.images || []) pendingDeletes.add(p);
+  let removedLinks = 0;
+  for (const a of data.areas) for (const x of a.scenes) {
+    const before = x.links.length;
+    x.links = x.links.filter((l) => l.to !== id);
+    removedLinks += before - x.links.length;
+  }
+  if (area.start === id) area.start = area.scenes[0]?.id || '';
+  tour.reindex();
+  if (data.start === id) data.start = tour.firstScene()?.id || '';
+  thumbs.delete(id);
+  if (!quiet && removedLinks) toast(`其他場景連到這裡的 ${removedLinks} 個白圈也已移除。`);
+  return removedLinks;
+}
+
+/* ================================================================ 檢視器 */
+function showEmpty(msg) {
+  $('empty-text').textContent = msg || '這個區域還沒有場景。把全景照片拖曳到左下方即可新增。';
+  $('empty-stage').hidden = false;
+  toolsEnabled(false);
+  if (nav) nav.current = null;
+  renderPanel();
+}
+
+function build(scene) {
+  const list = scene.links.map((l, i) => linkMarker(tour, scene, l, i, selection?.kind === 'link' && selection.index === i));
+  scene.tags.forEach((t, i) => list.push(tagMarker(t, i, {
+    selected: selection?.kind === 'tag' && selection.index === i,
+    content: preview ? tagHtml(t, resolve) : null,
+  })));
+  list.push(cursorMarker());
+  return list;
+}
+
+async function ensureViewer(scene) {
+  if (viewer) return;
+  viewer = new Viewer({
+    container: $('viewer'),
+    panorama: resolve(scene.file),
+    caption: scene.name,
+    defaultYaw: viewOf(scene).yaw,
+    defaultPitch: viewOf(scene).pitch,
+    navbar: ['zoom', 'caption', 'fullscreen'],
+    loadingTxt: '載入中…',
+    lang: LANG,
+    plugins: [[MarkersPlugin, { markers: [] }]],
+  });
+  markers = viewer.getPlugin(MarkersPlugin);
+  nav = new Navigator({ viewer, markers, tour, resolve, build, onChange: onSceneChange });
+  nav.preload = () => {};
+  await new Promise((ok) => viewer.addEventListener('ready', ok, { once: true }));
+  nav.current = scene;
+  nav.refresh();
+  onSceneChange(scene);
+
+  markers.addEventListener('select-marker', ({ marker }) => {
+    const d = marker.data || {};
+    if (mode) return;
+    if (preview) {
+      if (d.type === 'link') walkTo(nav.current.links[d.index]);
+      return;
+    }
+    if (d.type === 'link' || d.type === 'tag') select({ kind: d.type, index: d.index });
+  });
+  viewer.addEventListener('click', ({ data: c }) => {
+    if (c.rightclick || !nav.current) return;
+    const yaw = round1(norm180(deg(c.yaw)));
+    const pitch = round1(deg(c.pitch));
+    if (mode) { place(yaw, pitch); return; }
+    if (preview) {
+      const l = nav.linkToward(yaw, pitch);
+      if (l) walkTo(l);
+      return;
+    }
+    if (selection) select(null);
+  });
+  nav.attachCursor($('viewer'), () => preview || mode === 'link' || (mode === 'move' && selection?.kind === 'link'));
+}
+
+async function openScene(id) {
+  const s = tour.scene(id);
+  if (!s) return;
+  setMode(null);
+  selection = null;
+  try {
+    await ensureSceneAssets(s);
+  } catch (e) {
+    toast(`找不到「${s.name}」的全景圖（${s.file}），可以在右側按「換圖」重新指定。`, 6000);
+  }
+  $('empty-stage').hidden = true;
+  toolsEnabled(true);
+  if (tour.areaOf(id) !== currentArea) {
+    currentArea = tour.areaOf(id);
+    renderAreas();
+    renderScenes();
+  }
+  if (!viewer) { await ensureViewer(s); return; }
+  if (nav.current && nav.current.id === id) { nav.refresh(); renderPanel(); return; }
+  await nav.jump(id);
+}
+async function walkTo(link) {
+  const t = tour.scene(link.to);
+  if (!t) return;
+  try { await ensureSceneAssets(t); } catch (e) { toast('找不到目標場景的全景圖。'); return; }
+  await nav.walk(link);
+}
+function onSceneChange(scene) {
+  selection = null;
+  highlightRow();
+  renderPanel();
+  if (pendingAfterLink && pendingAfterLink.scene === scene.id) {
+    const to = pendingAfterLink.to;
+    pendingAfterLink = null;
+    setMode('link', to);
+  }
+}
+
+/* ================================================================ 工具列 */
+let newLinkTarget = null;
+function setMode(m, linkTarget = null) {
+  mode = m;
+  newLinkTarget = linkTarget;
+  $('tool-link').setAttribute('aria-pressed', String(m === 'link'));
+  $('tool-tag').setAttribute('aria-pressed', String(m === 'tag'));
+  $('stage').classList.toggle('placing', !!m);
+  const hints = {
+    link: '在地面上點一下，放置前往其他場景的白圈（Esc 取消）',
+    tag: '在畫面上點一下要放標籤的位置（Esc 取消）',
+    move: '點新的位置（Esc 取消）',
+  };
+  $('hint').textContent = hints[m] || '';
+  $('hint').hidden = !m;
+  if (!m) nav?.hideCursor();
+}
+$('tool-link').addEventListener('click', () => {
+  if (preview) togglePreview(false);
+  setMode(mode === 'link' ? null : 'link');
+});
+$('tool-tag').addEventListener('click', () => {
+  if (preview) togglePreview(false);
+  setMode(mode === 'tag' ? null : 'tag');
+});
+$('tool-view').addEventListener('click', () => {
+  if (!nav?.current) return;
+  const p = viewer.getPosition();
+  nav.current.view = { yaw: round1(norm180(deg(p.yaw))), pitch: round1(deg(p.pitch)) };
+  markDirty();
+  renderPanel();
+  toast('已把目前的視角設為進入這個場景時的方向。');
+});
+function togglePreview(on = !preview) {
+  preview = on;
+  $('tool-preview').setAttribute('aria-pressed', String(preview));
+  setMode(null);
+  select(null);
+  nav?.refresh();
+  toast(preview ? '預覽模式：點白圈會走過去，點標籤會打開說明。' : '已回到編輯模式。');
+}
+$('tool-preview').addEventListener('click', () => togglePreview());
+
+function place(yaw, pitch) {
+  const s = nav.current;
+  if (mode === 'link') {
+    const others = [...tour.byId.values()].filter((x) => x.id !== s.id);
+    if (!others.length) { toast('要先有第二個場景，才能放前往它的白圈。'); setMode(null); return; }
+    const linked = new Set(s.links.map((l) => l.to));
+    const to = newLinkTarget && tour.scene(newLinkTarget) ? newLinkTarget
+      : (others.find((x) => tour.areaOf(x.id) === currentArea && !linked.has(x.id)) || others[0]).id;
+    s.links.push({ yaw, pitch, to });
+    setMode(null);
+    select({ kind: 'link', index: s.links.length - 1 });
+    toast('已放置白圈，請在右側確認要前往的場景。');
+  } else if (mode === 'tag') {
+    s.tags.push({ yaw, pitch, title: '新標籤', text: '', images: [] });
+    setMode(null);
+    select({ kind: 'tag', index: s.tags.length - 1 });
+    setTimeout(() => { const t = $('tag-title'); if (t) { t.focus(); t.select(); } }, 30);
+  } else if (mode === 'move' && selection) {
+    const item = selection.kind === 'link' ? s.links[selection.index] : s.tags[selection.index];
+    item.yaw = yaw;
+    item.pitch = pitch;
+    setMode(null);
+    nav.refresh();
+    renderPanel();
+  }
+  markDirty();
+  renderScenes();
+}
+
+function select(sel) {
+  selection = sel;
+  nav?.refresh();
+  renderPanel();
+}
+
+/* ================================================================ 右側面板 */
+function renderPanel() {
+  const p = $('panel');
+  p.innerHTML = '';
+  const s = nav?.current;
+  if (!dir) return;
+  if (!s) return;
+  if (selection?.kind === 'link' && s.links[selection.index]) p.append(linkPanel(s, selection.index));
+  else if (selection?.kind === 'tag' && s.tags[selection.index]) p.append(tagPanel(s, selection.index));
+  else p.append(scenePanel(s));
+}
+
+function backLink() {
+  return el('button', { class: 'back', type: 'button', onclick: () => select(null) }, '← 回到場景設定');
+}
+
+function scenePanel(s) {
+  const area = tour.areaOf(s.id);
+  const sec = el('section');
+  sec.append(el('h2', {}, s.name, el('span', { class: 'kind' }, '場景')));
+
+  const name = el('input', { class: 'input', id: 'scene-name', type: 'text', value: s.name });
+  name.addEventListener('input', () => {
+    s.name = name.value;
+    markDirty();
+    const row = document.querySelector(`.scene-row[data-id="${CSS.escape(s.id)}"] .name`);
+    if (row && row.firstChild) row.firstChild.textContent = s.name;
+    viewer.setOption('caption', s.name);
+  });
+  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '名稱'), name));
+
+  const areaSel = el('select', { class: 'input', id: 'scene-area' });
+  for (const a of data.areas) areaSel.append(el('option', { value: a.id, selected: a === area }, a.name));
+  areaSel.addEventListener('change', () => {
+    const to = data.areas.find((a) => a.id === areaSel.value);
+    area.scenes = area.scenes.filter((x) => x !== s);
+    if (area.start === s.id) area.start = area.scenes[0]?.id || '';
+    to.scenes.push(s);
+    if (!to.start) to.start = s.id;
+    tour.reindex();
+    currentArea = to;
+    renderAreas();
+    renderScenes();
+    highlightRow();
+    markDirty();
+    toast(`已把「${s.name}」移到「${to.name}」。`);
+  });
+  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '所屬區域'), areaSel));
+
+  const isAreaStart = area.start === s.id || (!area.start && area.scenes[0] === s);
+  const isTourStart = data.start === s.id;
+  sec.append(el('div', { class: 'row' },
+    el('button', { class: 'btn small', type: 'button', disabled: isAreaStart, onclick: () => { area.start = s.id; markDirty(); renderScenes(); renderPanel(); } }, isAreaStart ? '✓ 區域起點' : '設為區域起點'),
+    el('button', { class: 'btn small', type: 'button', disabled: isTourStart, onclick: () => { data.start = s.id; markDirty(); renderPanel(); } }, isTourStart ? '✓ 整個導覽的起點' : '設為導覽起點'),
+  ));
+
+  const idx = area.scenes.indexOf(s);
+  const move = (d) => {
+    const j = idx + d;
+    if (j < 0 || j >= area.scenes.length) return;
+    [area.scenes[idx], area.scenes[j]] = [area.scenes[j], area.scenes[idx]];
+    markDirty();
+    renderScenes();
+    renderPanel();
+  };
+  sec.append(el('div', { class: 'row' },
+    el('span', { class: 'label' }, '在列表中的順序'),
+    el('button', { class: 'btn small', type: 'button', disabled: idx === 0, onclick: () => move(-1) }, '上移'),
+    el('button', { class: 'btn small', type: 'button', disabled: idx === area.scenes.length - 1, onclick: () => move(1) }, '下移'),
+  ));
+
+  sec.append(el('div', { class: 'field' },
+    el('span', { class: 'label' }, '全景圖'),
+    el('span', { class: 'mono' }, s.file),
+    el('div', { class: 'row' }, el('button', { class: 'btn small', type: 'button', onclick: () => $('file-replace').click() }, '換圖')),
+  ));
+  sec.append(el('p', { class: 'note' }, `進入視角：yaw ${s.view.yaw}°、pitch ${s.view.pitch}°。轉到想要的方向後，按上方「設為進入視角」。`));
+
+  const items = el('ul', { class: 'items' });
+  s.links.forEach((l, i) => {
+    const t = tour.scene(l.to);
+    items.append(el('li', {}, el('button', { type: 'button', onclick: () => focusItem('link', i) }, el('span', { class: 'ring' }), '白圈 → ' + (t ? t.name : '（場景不存在）'))));
+  });
+  s.tags.forEach((t, i) => {
+    items.append(el('li', {}, el('button', { type: 'button', onclick: () => focusItem('tag', i) }, el('span', { class: 'dot' }), '標籤：' + (t.title || '（未命名）'))));
+  });
+  const list = el('section');
+  list.append(el('h2', {}, '這個場景的白圈與標籤'));
+  if (s.links.length || s.tags.length) list.append(items);
+  else list.append(el('p', { class: 'note' }, '還沒有。用上方的「＋ 白圈」「＋ 標籤」新增。'));
+
+  const del = el('section');
+  const confirmBox = el('div', { class: 'confirm', hidden: true },
+    el('span', {}, `刪除「${s.name}」？其他場景連到這裡的白圈也會一併移除，圖檔會在儲存時刪除。`),
+    el('div', { class: 'row' },
+      el('button', { class: 'btn small danger solid', type: 'button', onclick: () => deleteCurrentScene() }, '刪除'),
+      el('button', { class: 'btn small', type: 'button', onclick: () => { confirmBox.hidden = true; } }, '取消')));
+  del.append(el('div', { class: 'row' }, el('button', { class: 'btn small danger', type: 'button', onclick: () => { confirmBox.hidden = false; } }, '刪除這個場景')), confirmBox);
+
+  const frag = document.createDocumentFragment();
+  frag.append(sec, list, del);
+  return frag;
+}
+
+async function focusItem(kind, i) {
+  select({ kind, index: i });
+  const item = kind === 'link' ? nav.current.links[i] : nav.current.tags[i];
+  viewer.animate({ yaw: rad(item.yaw), pitch: rad(Math.max(-60, Math.min(60, item.pitch))), speed: 700 });
+}
+
+async function deleteCurrentScene() {
+  const s = nav.current;
+  const area = tour.areaOf(s.id);
+  const i = area.scenes.indexOf(s);
+  removeScene(s.id);
+  markDirty();
+  renderAreas();
+  renderScenes();
+  const next = area.scenes[Math.min(i, area.scenes.length - 1)] || tour.firstScene();
+  nav.current = null;
+  if (next) await openScene(next.id);
+  else showEmpty();
+}
+
+$('file-replace').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  const s = nav?.current;
+  if (!f || !s) return;
+  toast('處理照片中…', 60000);
+  try {
+    const { blob, thumb, note } = await preparePano(f);
+    const path = `panos/${s.id}-${Date.now().toString(36)}.jpg`;
+    await writeFile(path, blob);
+    pendingDeletes.add(s.file);
+    s.file = path;
+    urls.set(path, URL.createObjectURL(blob));
+    thumbs.set(s.id, thumb);
+    await viewer.setPanorama(resolve(path), { position: viewer.getPosition(), transition: false, caption: s.name });
+    nav.refresh();
+    renderScenes();
+    renderPanel();
+    markDirty();
+    toast(note || '已換圖。白圈和標籤的位置沒有變，若拍攝方向不同請重新放置。', note ? 6000 : 4000);
+  } catch (err) {
+    toast('換圖失敗：' + err.message, 6000);
+  }
+});
+
+function linkPanel(s, i) {
+  const l = s.links[i];
+  const sec = el('section');
+  sec.append(backLink(), el('h2', {}, '白圈', el('span', { class: 'kind' }, l.pitch <= -3 ? '地面' : '直立')));
+  const sel = el('select', { class: 'input', id: 'link-to' });
+  for (const a of data.areas) {
+    const g = el('optgroup', { label: a.name });
+    for (const x of a.scenes) if (x.id !== s.id) g.append(el('option', { value: x.id, selected: x.id === l.to }, x.name));
+    if (g.children.length) sel.append(g);
+  }
+  sel.addEventListener('change', () => { l.to = sel.value; markDirty(); nav.refresh(); renderPanel(); renderScenes(); });
+  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '前往'), sel));
+  sec.append(el('p', { class: 'mono' }, `yaw ${l.yaw}°　pitch ${l.pitch}°`));
+
+  const t = tour.scene(l.to);
+  if (t) {
+    const back = t.links.find((x) => x.to === s.id);
+    if (back) sec.append(el('p', { class: 'note ok' }, `「${t.name}」有連回這裡的白圈，走過去時畫面會延續前進的方向。`));
+    else {
+      sec.append(el('p', { class: 'note' }, `「${t.name}」還沒有連回這裡的白圈。加上回程白圈，走過去時方向才會自然，也能走回來。`));
+      sec.append(el('div', { class: 'row' }, el('button', {
+        class: 'btn small', type: 'button',
+        onclick: async () => { pendingAfterLink = { scene: t.id, to: s.id }; await walkTo(l); },
+      }, '到那裡加回程白圈')));
+    }
+  }
+  sec.append(el('div', { class: 'row' },
+    el('button', { class: 'btn small', type: 'button', onclick: () => setMode('move') }, '重新放置'),
+    el('button', { class: 'btn small', type: 'button', disabled: !t, onclick: () => walkTo(l) }, '走過去看看'),
+    el('button', { class: 'btn small danger', type: 'button', onclick: () => { s.links.splice(i, 1); select(null); markDirty(); renderScenes(); } }, '刪除白圈'),
+  ));
+  sec.append(el('p', { class: 'note' }, '點在地面上會畫成地上的白圈；點在水平線以上（例如樓梯往上）會畫成直立的圓圈。'));
+  return sec;
+}
+
+function tagPanel(s, i) {
+  const t = s.tags[i];
+  t.images = t.images || [];
+  const sec = el('section');
+  sec.append(backLink(), el('h2', {}, '標籤', el('span', { class: 'kind' }, '圖文說明')));
+  const title = el('input', { class: 'input', id: 'tag-title', type: 'text', value: t.title });
+  title.addEventListener('input', () => { t.title = title.value; markDirty(); });
+  title.addEventListener('change', () => { nav.refresh(); renderScenes(); });
+  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '標題'), title));
+  const text = el('textarea', { class: 'input', id: 'tag-text', rows: '7', placeholder: '每一行會成為一個段落' });
+  text.value = t.text || '';
+  text.addEventListener('input', () => { t.text = text.value; markDirty(); });
+  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '說明'), text));
+
+  const grid = el('div', { class: 'imgs' });
+  t.images.forEach((p, k) => {
+    const img = el('img', { alt: '' });
+    ensureUrl(p).then((u) => { img.src = u; }).catch(() => { img.alt = '找不到圖檔'; });
+    grid.append(el('figure', {}, img,
+      el('button', { class: 'x', type: 'button', title: '移除這張圖', 'aria-label': '移除這張圖', onclick: () => { pendingDeletes.add(p); t.images.splice(k, 1); markDirty(); renderPanel(); } }, '×'),
+      el('div', { class: 'mv' },
+        k > 0 ? el('button', { type: 'button', title: '往前', 'aria-label': '往前', onclick: () => { [t.images[k - 1], t.images[k]] = [t.images[k], t.images[k - 1]]; markDirty(); renderPanel(); } }, '‹') : null,
+        k < t.images.length - 1 ? el('button', { type: 'button', title: '往後', 'aria-label': '往後', onclick: () => { [t.images[k + 1], t.images[k]] = [t.images[k], t.images[k + 1]]; markDirty(); renderPanel(); } }, '›') : null)));
+  });
+  sec.append(el('div', { class: 'field' }, el('span', { class: 'label' }, '圖片'), t.images.length ? grid : el('p', { class: 'note' }, '還沒有圖片。'),
+    el('div', { class: 'row' }, el('button', { class: 'btn small', type: 'button', onclick: () => $('file-tagimg').click() }, '新增圖片'))));
+  sec.append(el('p', { class: 'mono' }, `yaw ${t.yaw}°　pitch ${t.pitch}°`));
+  sec.append(el('div', { class: 'row' },
+    el('button', { class: 'btn small', type: 'button', onclick: () => setMode('move') }, '重新放置'),
+    el('button', { class: 'btn small danger', type: 'button', onclick: () => {
+      for (const p of t.images) pendingDeletes.add(p);
+      s.tags.splice(i, 1);
+      select(null);
+      markDirty();
+      renderScenes();
+    } }, '刪除標籤'),
+  ));
+  return sec;
+}
+
+$('file-tagimg').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  const s = nav?.current;
+  if (!s || selection?.kind !== 'tag') return;
+  const t = s.tags[selection.index];
+  for (const f of files) {
+    try {
+      const blob = await prepareTagImage(f);
+      const path = `images/${s.id}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 4)}.jpg`;
+      await writeFile(path, blob);
+      urls.set(path, URL.createObjectURL(blob));
+      t.images.push(path);
+    } catch (err) {
+      toast(`「${f.name}」無法讀取：${err.message}`, 6000);
+    }
+  }
+  markDirty();
+  renderPanel();
+});
+
+/* 讓自動測試可以直接指定資料夾（一般使用不會用到） */
+window.tourEditor = { openProject };
+</script>
+</body>
+</html>
