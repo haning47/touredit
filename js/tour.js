@@ -126,6 +126,12 @@ export function tagHtml(tag, resolve) {
   return `<article class="tag-panel">${imgs}<h2>${esc(tag.title)}</h2>${body}</article>`;
 }
 
+/* 直立圓圈裡箭頭的方向（度，0 = 往前、順時針）；沒設定就是往前 */
+export function arrowStyle(link) {
+  const a = Number(link && link.arrow);
+  return Number.isFinite(a) && a % 360 !== 0 ? ` style="--arrow:${a}deg"` : '';
+}
+
 /* 回傳 null 表示這個連結目前畫不出來（例如自動白圈但還沒放到平面圖） */
 export function linkMarker(tour, scene, link, i, selected = false) {
   const g = linkGeom(tour, scene, link);
@@ -146,7 +152,7 @@ export function linkMarker(tour, scene, link, i, selected = false) {
   return {
     ...base,
     position: { yaw: rad(g.yaw), pitch: rad(g.pitch) },
-    html: '<span class="go-ring"></span>',
+    html: `<span class="go-ring"${arrowStyle(link)}></span>`,
     size: { width: 46, height: 46 },
     anchor: 'center center',
     className: 'go-marker' + cls,

@@ -503,7 +503,7 @@ import { Viewer } from '@photo-sphere-viewer/core';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import {
   Tour, Navigator, PlanView, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, linkGeom,
-  placed, isManual, bearing, floorDistance, deg, rad, round1, round2, norm180, norm360, LANG,
+  placed, isManual, bearing, floorDistance, deg, rad, round1, round2, norm180, norm360, LANG, FLOOR_LIMIT,
 } from './js/tour.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1446,6 +1446,21 @@ $('file-replace').addEventListener('change', async (e) => {
   }
 });
 
+const ARROWS = [[0, '↑', '往前'], [45, '↗', '右前'], [90, '→', '往右'], [135, '↘', '右後'], [180, '↓', '往後'], [225, '↙', '左後'], [270, '←', '往左'], [315, '↖', '左前']];
+function arrowField(l, g) {
+  const cur = ((Math.round(Number(l.arrow) || 0) % 360) + 360) % 360;
+  const row = el('div', { class: 'row' });
+  for (const [v, ch, name] of ARROWS) {
+    row.append(el('button', {
+      class: 'btn small', type: 'button', title: name, 'aria-label': '箭頭' + name, 'aria-pressed': String(cur === v),
+      onclick: () => { if (v) l.arrow = v; else delete l.arrow; markDirty(); nav.refresh(); renderPanel(); },
+    }, ch));
+  }
+  const f = el('div', { class: 'field' }, el('span', { class: 'label' }, '箭頭方向'), row);
+  if (g && g.pitch <= FLOOR_LIMIT) f.append(el('p', { class: 'note' }, '這個白圈在地上，不會顯示箭頭；直立的圓圈才會。'));
+  return f;
+}
+
 function linkPanel(s, i) {
   const l = s.links[i];
   const g = linkGeom(tour, s, l);
@@ -1459,6 +1474,7 @@ function linkPanel(s, i) {
     if (g) {
       sec.append(el('p', { class: 'mono' }, `距離 ${g.dist.toFixed(2)} m　方位 ${round1(norm360(g.bearing))}°`));
       sec.append(el('p', { class: 'note' }, '位置是依平面圖自動算的。白圈不準時，到平面圖移動拍攝點，或在場景設定裡校正方向。'));
+      sec.append(arrowField(l, g));
     } else {
       sec.append(el('p', { class: 'note warn' }, '兩個場景都放到同一個區域的平面圖上，這個白圈才會出現。'));
     }
@@ -1486,6 +1502,7 @@ function linkPanel(s, i) {
   sel.addEventListener('change', () => { l.to = sel.value; markDirty(); nav.refresh(); renderPanel(); renderScenes(); });
   sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '前往'), sel));
   sec.append(el('p', { class: 'mono' }, `yaw ${l.yaw}°　pitch ${l.pitch}°`));
+  sec.append(arrowField(l, g));
   if (t && placed(s) && placed(t) && tour.areaOf(t.id) === tour.areaOf(s.id)) {
     sec.append(el('div', { class: 'row' }, el('button', { class: 'btn small', type: 'button', onclick: () => {
       delete l.yaw;
