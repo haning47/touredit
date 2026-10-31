@@ -281,6 +281,10 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 .tool:hover { background: rgba(255, 255, 255, 0.16); }
 .tool[aria-pressed="true"] { background: var(--tag); border-color: var(--tag); color: #241a04; font-weight: 500; }
 .tool:disabled { opacity: 0.4; cursor: default; }
+.nav-sel { font: inherit; font-size: 13px; color: #fff; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 6px; padding: 5px 6px; max-width: 170px; cursor: pointer; }
+.nav-sel:disabled { opacity: 0.4; cursor: default; }
+.nav-sel option { color: #111; background: #fff; }
+.tool-sep { width: 1px; align-self: stretch; margin: 2px 2px; background: rgba(255, 255, 255, 0.2); }
 .hint {
   position: absolute;
   z-index: 120;
@@ -431,6 +435,9 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
   <div class="stage" id="stage">
     <div id="viewer"></div>
     <div class="toolbar">
+      <select class="nav-sel" id="nav-area" aria-label="切換區域" title="切換區域" disabled></select>
+      <select class="nav-sel" id="nav-scene" aria-label="切換地點" title="切換地點" disabled></select>
+      <span class="tool-sep" aria-hidden="true"></span>
       <button class="tool" id="tool-view" type="button" disabled>設為進入視角</button>
       <button class="tool" id="tool-link" type="button" aria-pressed="false" disabled title="跨區域、上下樓梯，或還沒放到平面圖時使用">＋ 手動白圈</button>
       <button class="tool" id="tool-tag" type="button" aria-pressed="false" disabled>＋ 標籤</button>
@@ -454,8 +461,11 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
       <button class="btn small" id="plan-image" type="button" disabled>設定底圖</button>
       <button class="btn small" id="plan-scale" type="button" aria-pressed="false" disabled>比例尺</button>
       <button class="btn small danger" id="plan-image-del" type="button" hidden>移除底圖</button>
-      <button class="btn small" id="plan-fit" type="button" disabled>全部顯示</button>
-      <span class="plan-hint" id="plan-hint" aria-live="polite"></span>
+      <button class="btn small" id="plan-zoom-in" type="button" disabled title="放大（也可以用滑鼠滾輪）" aria-label="放大">＋</button>
+      <button class="btn small" id="plan-zoom-out" type="button" disabled title="縮小（也可以用滑鼠滾輪）" aria-label="縮小">－</button>
+      <button class="btn small" id="plan-fit-pts" type="button" disabled>對準拍攝點</button>
+      <button class="btn small" id="plan-fit" type="button" disabled>整張底圖</button>
+      <span class="plan-hint" id="plan-hint" aria-live="polite">滾輪或 ＋／－ 縮放，拖曳空白處移動</span>
     </div>
     <div class="plan-wrap" id="plan-wrap">
       <svg id="plan-svg" role="application" aria-label="平面圖"></svg>
@@ -492,9 +502,9 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
-    "@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.module.js",
-    "@photo-sphere-viewer/markers-plugin": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/markers-plugin@5.15.1/index.module.js"
+    "three": "./lib/three-0.185.1/three.module.js",
+    "@photo-sphere-viewer/core": "./lib/photo-sphere-viewer-5.15.1/core.js",
+    "@photo-sphere-viewer/markers-plugin": "./lib/photo-sphere-viewer-5.15.1/markers-plugin.js"
   }
 }
 </script>
@@ -507,7 +517,9 @@ import {
 } from './js/tour.js';
 
 const $ = (id) => document.getElementById(id);
-const VIEWER_FILES = ['index.html', 'editor.html', 'js/tour.js', 'css/psv.css', 'css/tour.css'];
+const VIEWER_FILES = ['index.html', 'editor.html', 'js/tour.js', 'css/psv.css', 'css/tour.css',
+  'lib/three-0.185.1/three.module.js', 'lib/three-0.185.1/three.core.js', 'lib/three-0.185.1/LICENSE.txt',
+  'lib/photo-sphere-viewer-5.15.1/core.js', 'lib/photo-sphere-viewer-5.15.1/markers-plugin.js', 'lib/photo-sphere-viewer-5.15.1/LICENSE.txt'];
 
 /* ================================================================ 狀態 */
 let dir = null;            // 使用者選的資料夾
@@ -649,7 +661,7 @@ function el(tag, attrs = {}, ...kids) {
 }
 function setEnabled(on) {
   for (const id of ['tour-title', 'tour-height', 'area-select', 'area-add', 'area-rename', 'area-del', 'add-scene',
-    'plan-connect', 'plan-auto', 'plan-image', 'plan-fit']) $(id).disabled = !on;
+    'plan-connect', 'plan-auto', 'plan-image', 'plan-fit', 'plan-fit-pts', 'plan-zoom-in', 'plan-zoom-out']) $(id).disabled = !on;
 }
 function toolsEnabled(on) {
   for (const id of ['tool-view', 'tool-link', 'tool-tag', 'tool-preview']) $(id).disabled = !on;
@@ -752,7 +764,7 @@ async function openProject(handle) {
   currentArea = tour.areaOf(tour.firstScene()?.id) || data.areas[0];
   if (!plan) {
     plan = new PlanView($('plan-svg'), { tour, resolve, zoomable: true, labels: 'all', onNode: onPlanNode });
-    plan.panBlocked = () => planMode === 'scale' || !!placingId;
+    /* 放置、比例尺模式也可以拖曳移動；拖曳過就不算點擊 */
     plan.onRender = decoratePlan;
     setupPlanEditing();
   } else {
@@ -917,6 +929,25 @@ function renderScenes() {
   }
   if (!currentArea.scenes.length) ul.append(el('li', { class: 'note', style: 'padding:10px' }, '這個區域還沒有場景。'));
   refreshPlan();
+  renderStageNav();
+}
+$('nav-area').addEventListener('change', (e) => {
+  const a = data.areas.find((x) => x.id === e.target.value);
+  const s = a && tour.areaStart(a);
+  e.target.blur();
+  if (s) openScene(s.id); else renderStageNav();
+});
+$('nav-scene').addEventListener('change', (e) => { e.target.blur(); openScene(e.target.value); });
+function renderStageNav() {
+  const aSel = $('nav-area'), sSel = $('nav-scene');
+  if (!data || !tour) return;
+  const cur = nav?.current;
+  const area = cur ? tour.areaOf(cur.id) : currentArea;
+  aSel.innerHTML = '';
+  sSel.innerHTML = '';
+  for (const a of data.areas) aSel.append(el('option', { value: a.id, selected: a === area, disabled: !a.scenes.length }, a.name + (a.scenes.length ? '' : '（沒有場景）')));
+  for (const s of area?.scenes || []) sSel.append(el('option', { value: s.id, selected: !!cur && s.id === cur.id }, s.name));
+  aSel.disabled = sSel.disabled = !cur;
 }
 function highlightRow() {
   document.querySelectorAll('.scene-row').forEach((r) => r.setAttribute('aria-current', String(r.dataset.id === nav?.current?.id)));
@@ -1100,6 +1131,7 @@ function onSceneChange(scene) {
   selection = null;
   calibRef = null;
   highlightRow();
+  renderStageNav();
   renderPanel();
   if (plan) {
     plan.current = scene;
@@ -1241,8 +1273,19 @@ function scenePanel(s) {
 
   const areaSel = el('select', { class: 'input', id: 'scene-area' });
   for (const a of data.areas) areaSel.append(el('option', { value: a.id, selected: a === area }, a.name));
+  const moveBox = el('div', { class: 'confirm', hidden: true });
   areaSel.addEventListener('change', () => {
     const to = data.areas.find((a) => a.id === areaSel.value);
+    moveBox.innerHTML = '';
+    if (!to || to === area) { moveBox.hidden = true; return; }
+    moveBox.append(
+      el('span', {}, `把「${s.name}」移到「${to.name}」？` + (placed(s) ? '它在平面圖上的位置會被清除，要到新區域重新放置。' : '')),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn small primary', type: 'button', onclick: () => moveSceneTo(to) }, '移動'),
+        el('button', { class: 'btn small', type: 'button', onclick: () => { areaSel.value = area.id; moveBox.hidden = true; } }, '取消')));
+    moveBox.hidden = false;
+  });
+  const moveSceneTo = (to) => {
     area.scenes = area.scenes.filter((x) => x !== s);
     if (area.start === s.id) area.start = area.scenes[0]?.id || '';
     to.scenes.push(s);
@@ -1259,8 +1302,9 @@ function scenePanel(s) {
     renderPanel();
     markDirty();
     toast(`已把「${s.name}」移到「${to.name}」。` + (hadPos ? '請在新區域的平面圖上重新放置位置。' : ''), 5000);
-  });
-  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '所屬區域'), areaSel));
+  };
+  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '移到其他區域'), areaSel), moveBox);
+  sec.append(el('p', { class: 'note' }, '這是搬移場景用的。只是要切換畫面，請用全景畫面上方的「區域」「地點」選單。'));
 
   const isAreaStart = area.start === s.id || (!area.start && area.scenes[0] === s);
   const isTourStart = data.start === s.id;
@@ -1651,7 +1695,7 @@ function renderUnplaced() {
   }
 }
 
-function setPlanHint(t) { $('plan-hint').textContent = t || ''; }
+function setPlanHint(t) { $('plan-hint').textContent = t || '滾輪或 ＋／－ 縮放，拖曳空白處移動'; }
 
 function setPlanMode(m) {
   planMode = m;
@@ -1835,7 +1879,10 @@ function setupPlanEditing() {
 
   $('plan-connect').addEventListener('click', () => setPlanMode(planMode === 'connect' ? null : 'connect'));
   $('plan-auto').addEventListener('click', autoConnect);
-  $('plan-fit').addEventListener('click', () => { plan.fit(); decoratePlan(); });
+  $('plan-fit').addEventListener('click', () => { plan.fit('all'); decoratePlan(); });
+  $('plan-fit-pts').addEventListener('click', () => { plan.fit('points'); decoratePlan(); });
+  $('plan-zoom-in').addEventListener('click', () => plan.zoomBy(1 / 1.6));
+  $('plan-zoom-out').addEventListener('click', () => plan.zoomBy(1.6));
   $('plan-scale').addEventListener('click', () => setPlanMode(planMode === 'scale' ? null : 'scale'));
   $('scale-cancel').addEventListener('click', () => setPlanMode(null));
   $('scale-dist').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('scale-ok').click(); });

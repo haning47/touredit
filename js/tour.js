@@ -356,7 +356,8 @@ function svgEl(tag, attrs = {}, parent = null) {
  * 瀏覽頁用來顯示小地圖，編輯器用來拖曳拍攝點、連線、設定比例尺。
  */
 export class PlanView {
-  constructor(svg, { tour, resolve = (p) => p, onNode = null, zoomable = false, labels = 'all' } = {}) {
+  constructor(svg, { tour, resolve = (p) => p, onNode = null, zoomable = false, labels = 'all', fitTo = 'points' } = {}) {
+    this.fitMode = fitTo;   // 'points' = 對準拍攝點，'all' = 整張底圖
     this.svg = svg;
     this.tour = tour;
     this.resolve = resolve;
@@ -395,7 +396,14 @@ export class PlanView {
     if (!p || !p.image || !p.imgW || !p.scale) return null;
     return { x: 0, y: 0, w: p.imgW * p.scale, h: p.imgH * p.scale };
   }
-  bounds() {
+  bounds(mode = this.fitMode) {
+    const pts = (this.area?.scenes || []).filter(placed);
+    if (mode === 'points' && pts.length >= 2) {
+      let a0 = Infinity, b0 = Infinity, a1 = -Infinity, b1 = -Infinity;
+      for (const s of pts) { a0 = Math.min(a0, s.x); b0 = Math.min(b0, s.y); a1 = Math.max(a1, s.x); b1 = Math.max(b1, s.y); }
+      const m = Math.max(4, 0.12 * Math.max(a1 - a0, b1 - b0));
+      return { x: a0 - m, y: b0 - m, w: Math.max(8, a1 - a0 + 2 * m), h: Math.max(6, b1 - b0 + 2 * m) };
+    }
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
     const r = this.imageRect();
@@ -406,7 +414,30 @@ export class PlanView {
     x0 -= m; y0 -= m; x1 += m; y1 += m;
     return { x: x0, y: y0, w: Math.max(4, x1 - x0), h: Math.max(3, y1 - y0) };
   }
-  fit() { this.vb = null; this.render(); }
+  fit(mode) { if (mode) this.fitMode = mode; this.vb = null; this.render(); }
+
+  /* 以世界座標 p 為中心縮放，k < 1 放大、k > 1 縮小 */
+  zoomAt(p, k) {
+    if (!this.area) return;
+    const vb = this.vb || this.bounds();
+    const w = Math.min(4000, Math.max(2, vb.w * k));
+    const f = w / vb.w;
+    this.vb = { x: p.x - (p.x - vb.x) * f, y: p.y - (p.y - vb.y) * f, w, h: vb.h * f };
+    this.render();
+  }
+  zoomBy(k) {
+    const vb = this.vb || this.bounds();
+    this.zoomAt({ x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 }, k);
+  }
+  /* 拍攝點跑到畫面外時，把畫面移過去（不改縮放） */
+  ensureVisible(s) {
+    const vb = this.vb;
+    if (!vb || !placed(s)) return;
+    const mx = vb.w * 0.1, my = vb.h * 0.1;
+    if (s.x < vb.x + mx || s.x > vb.x + vb.w - mx || s.y < vb.y + my || s.y > vb.y + vb.h - my) {
+      this.vb = { ...vb, x: s.x - vb.w / 2, y: s.y - vb.h / 2 };
+    }
+  }
 
   /* 世界座標 (x, y) ↔ SVG 座標 (x, -y) */
   toWorld(clientX, clientY) {
@@ -426,25 +457,42 @@ export class PlanView {
   }
 
   enableZoom() {
-    this.svg.addEventListener('wheel', (e) => {
+    const svg = this.svg;
+    svg.style.touchAction = 'none';
+    svg.addEventListener('wheel', (e) => {
       if (!this.area) return;
       e.preventDefault();
-      const vb = this.vb || this.bounds();
-      const p = this.toWorld(e.clientX, e.clientY);
-      const k = Math.exp(e.deltaY * 0.0015);
-      const w = Math.min(2000, Math.max(2, vb.w * k));
-      const h = vb.h * (w / vb.w);
-      this.vb = { x: p.x - (p.x - vb.x) * (w / vb.w), y: p.y - (p.y - vb.y) * (h / vb.h), w, h };
-      this.render();
+      this.zoomAt(this.toWorld(e.clientX, e.clientY), Math.exp(e.deltaY * 0.0015));
     }, { passive: false });
-    let pan = null;
-    this.svg.addEventListener('pointerdown', (e) => {
-      if (e.target !== this.svg && !e.target.closest('.pv-bg')) return;
+    const pts = new Map();   // 目前按著的手指／滑鼠
+    let pan = null, pinch = null;
+    const quiet = () => { this.suppressClick = true; setTimeout(() => { this.suppressClick = false; }, 0); };
+    svg.addEventListener('pointerdown', (e) => {
+      if (!this.area) return;
+      const onBg = e.target === svg || e.target.closest('.pv-bg');
+      if (!pts.size && !onBg) return;   // 第一指按在拍攝點上：交給點擊或拖曳
       if (this.panBlocked?.()) return;
-      pan = { x: e.clientX, y: e.clientY, vb: { ...(this.vb || this.bounds()) }, moved: false };
-      this.svg.setPointerCapture(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { svg.setPointerCapture(e.pointerId); } catch (err) { /* 略過 */ }
+      if (pts.size === 1) {
+        pan = { x: e.clientX, y: e.clientY, vb: { ...(this.vb || this.bounds()) }, moved: false };
+      } else if (pts.size === 2) {
+        const [p, q] = [...pts.values()];
+        pinch = { d: Math.hypot(p.x - q.x, p.y - q.y) || 1 };
+        pan = null;
+      }
     });
-    this.svg.addEventListener('pointermove', (e) => {
+    svg.addEventListener('pointermove', (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch) {
+        if (pts.size < 2) return;
+        const [p, q] = [...pts.values()];
+        const d = Math.hypot(p.x - q.x, p.y - q.y) || 1;
+        this.zoomAt(this.toWorld((p.x + q.x) / 2, (p.y + q.y) / 2), pinch.d / d);
+        pinch.d = d;
+        return;
+      }
       if (!pan) return;
       const u = this.unit();
       const dx = (e.clientX - pan.x) * u;
@@ -454,14 +502,18 @@ export class PlanView {
       this.render();
     });
     const end = (e) => {
-      if (!pan) return;
-      if (pan.moved) this.suppressClick = true;
+      if (!pts.has(e.pointerId)) return;
+      pts.delete(e.pointerId);
+      try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* 已釋放 */ }
+      if (pinch) {
+        if (pts.size < 2) { pinch = null; pan = null; quiet(); }
+        return;
+      }
+      if (pan && pan.moved) quiet();
       pan = null;
-      try { this.svg.releasePointerCapture(e.pointerId); } catch (err) { /* 已釋放 */ }
-      setTimeout(() => { this.suppressClick = false; }, 0);
     };
-    this.svg.addEventListener('pointerup', end);
-    this.svg.addEventListener('pointercancel', end);
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', end);
   }
 
   render() {

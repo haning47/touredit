@@ -89,8 +89,15 @@ body {
 .map-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); letter-spacing: 0.06em; }
 .map-head button { font: inherit; color: var(--muted); background: none; border: 0; padding: 2px 4px; cursor: pointer; }
 .map-head button:hover { color: var(--fg); }
-.map svg { display: block; width: 100%; height: 190px; margin-top: 4px; border-radius: 6px; }
-.map.collapsed svg { display: none; }
+#map-svg { display: block; width: 100%; height: 190px; margin-top: 4px; border-radius: 6px; }
+.map.collapsed .map-wrap { display: none; }
+.map-tools { display: flex; gap: 2px; }
+.map-wrap { position: relative; }
+.map-zoom { position: absolute; right: 6px; bottom: 6px; display: flex; flex-direction: column; gap: 4px; }
+.map-zoom button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 6px; border: 1px solid var(--glass-line); background: rgba(12, 17, 15, 0.72); color: #fff; font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
+.map-zoom button:hover { background: rgba(40, 48, 44, 0.9); }
+.map.big { width: min(760px, calc(100% - 24px)); }
+.map.big #map-svg { height: min(62vh, 560px); }
 
 .notice {
   position: fixed;
@@ -109,7 +116,7 @@ body {
   .bar h1 { width: 100%; font-size: 15px; }
   .field { flex: 1 1 140px; min-width: 0; }
   .field select { flex: 1; min-width: 0; max-width: none; width: 100%; }
-  .map svg { height: 150px; }
+  #map-svg { height: 150px; }
 }
 </style>
 </head>
@@ -123,8 +130,15 @@ body {
 </header>
 
 <div class="map" id="map" hidden>
-  <div class="map-head"><span id="map-title">平面圖</span><button type="button" id="map-toggle" aria-expanded="true">收合</button></div>
-  <svg id="map-svg" role="img" aria-label="拍攝點平面圖"></svg>
+  <div class="map-head"><span id="map-title">平面圖</span><span class="map-tools"><button type="button" id="map-big" aria-pressed="false">放大地圖</button><button type="button" id="map-toggle" aria-expanded="true">收合</button></span></div>
+  <div class="map-wrap">
+    <svg id="map-svg" role="img" aria-label="拍攝點平面圖"></svg>
+    <div class="map-zoom">
+      <button type="button" id="map-in" title="放大" aria-label="放大">＋</button>
+      <button type="button" id="map-out" title="縮小" aria-label="縮小">－</button>
+      <button type="button" id="map-fit" title="顯示所有拍攝點" aria-label="顯示所有拍攝點"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+    </div>
+  </div>
 </div>
 
 <div class="notice" id="notice" hidden><p id="notice-text"></p></div>
@@ -132,9 +146,9 @@ body {
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
-    "@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5.15.1/index.module.js",
-    "@photo-sphere-viewer/markers-plugin": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/markers-plugin@5.15.1/index.module.js"
+    "three": "./lib/three-0.185.1/three.module.js",
+    "@photo-sphere-viewer/core": "./lib/photo-sphere-viewer-5.15.1/core.js",
+    "@photo-sphere-viewer/markers-plugin": "./lib/photo-sphere-viewer-5.15.1/markers-plugin.js"
   }
 }
 </script>
@@ -187,7 +201,18 @@ function fillScenes(area) {
   }
 }
 /* ---------------------------------------------------------- 小地圖 */
-const plan = new PlanView($('map-svg'), { tour, resolve, labels: 'current', onNode: (s) => nav.jump(s.id) });
+const plan = new PlanView($('map-svg'), { tour, resolve, labels: 'current', zoomable: true, onNode: (s) => nav.jump(s.id) });
+$('map-in').addEventListener('click', () => plan.zoomBy(1 / 1.6));
+$('map-out').addEventListener('click', () => plan.zoomBy(1.6));
+$('map-fit').addEventListener('click', () => plan.fit());
+$('map-big').addEventListener('click', () => {
+  const big = $('map').classList.toggle('big');
+  if (big && $('map').classList.contains('collapsed')) $('map-toggle').click();
+  $('map-big').textContent = big ? '縮小地圖' : '放大地圖';
+  $('map-big').setAttribute('aria-pressed', String(big));
+  plan.labels = big ? 'all' : 'current';
+  plan.render();
+});
 if (window.matchMedia('(max-width: 600px)').matches) {
   $('map').classList.add('collapsed');
   $('map-toggle').textContent = '展開';
@@ -205,6 +230,7 @@ function syncMap(scene) {
   if (!show) return;
   $('map-title').textContent = area.name;
   plan.current = scene;
+  if (plan.area === area) plan.ensureVisible(scene);
   plan.setArea(area);
 }
 
