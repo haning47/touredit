@@ -155,7 +155,7 @@ body {
 <script type="module">
 import { Viewer } from '@photo-sphere-viewer/core';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
-import { Tour, Navigator, PlanView, placed, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, deg, LANG } from './js/tour.js';
+import { Tour, Navigator, PlanView, placed, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, deg, LANG, keepClearOfPanel } from './js/tour.js';
 
 const $ = (id) => document.getElementById(id);
 function notice(msg) { $('notice-text').textContent = msg; $('notice').hidden = false; }
@@ -281,6 +281,7 @@ function build(scene) {
 }
 
 const nav = new Navigator({ viewer, markers, tour, resolve, build, onChange: syncSelects });
+keepClearOfPanel(viewer, $('viewer'), () => [document.querySelector('.bar'), $('map')]);
 
 viewer.addEventListener('ready', () => {
   nav.current = first;

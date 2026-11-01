@@ -284,6 +284,13 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 .nav-sel { font: inherit; font-size: 13px; color: #fff; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 6px; padding: 5px 6px; max-width: 170px; cursor: pointer; }
 .nav-sel:disabled { opacity: 0.4; cursor: default; }
 .nav-sel option { color: #111; background: #fff; }
+.view-choice:not([hidden]) { flex-basis: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 4px 2px; border-top: 1px solid rgba(255, 255, 255, 0.16); }
+.view-choice p { margin: 0 0 2px; color: #fff; font-size: 13px; }
+.view-choice .btn { text-align: left; }
+.aim { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; z-index: 110; pointer-events: none; }
+.aim::before, .aim::after { content: ""; position: absolute; background: #ff7a45; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); }
+.aim::before { left: 22px; top: 0; width: 2px; height: 46px; }
+.aim::after { top: 22px; left: 0; width: 46px; height: 2px; }
 .tool-sep { width: 1px; align-self: stretch; margin: 2px 2px; background: rgba(255, 255, 255, 0.2); }
 .hint {
   position: absolute;
@@ -394,6 +401,8 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
     <button class="btn" id="reopen-btn" type="button" hidden></button>
     <span class="spacer"></span>
     <span class="status" id="status" aria-live="polite"></span>
+    <button class="btn" id="undo-btn" type="button" disabled title="復原（Ctrl+Z）">↶ 復原</button>
+    <button class="btn" id="redo-btn" type="button" disabled title="重做（Ctrl+Y）">↷ 重做</button>
     <button class="btn primary" id="save-btn" type="button" disabled>儲存</button>
   </header>
 
@@ -434,6 +443,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
   <main class="center">
   <div class="stage" id="stage">
     <div id="viewer"></div>
+    <div class="aim" id="aim" hidden aria-hidden="true"></div>
     <div class="toolbar">
       <select class="nav-sel" id="nav-area" aria-label="切換區域" title="切換區域" disabled></select>
       <select class="nav-sel" id="nav-scene" aria-label="切換地點" title="切換地點" disabled></select>
@@ -442,6 +452,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
       <button class="tool" id="tool-link" type="button" aria-pressed="false" disabled title="跨區域、上下樓梯，或還沒放到平面圖時使用">＋ 手動白圈</button>
       <button class="tool" id="tool-tag" type="button" aria-pressed="false" disabled>＋ 標籤</button>
       <button class="tool" id="tool-preview" type="button" aria-pressed="false" disabled>預覽模式</button>
+      <div class="view-choice" id="view-choice" hidden></div>
     </div>
     <div class="hint" id="hint" hidden></div>
     <div class="toast" id="toast" hidden></div>
@@ -512,7 +523,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 import { Viewer } from '@photo-sphere-viewer/core';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import {
-  Tour, Navigator, PlanView, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, linkGeom,
+  Tour, Navigator, PlanView, linkMarker, tagMarker, cursorMarker, tagHtml, viewOf, linkGeom, youtubeId, keepClearOfPanel,
   placed, isManual, bearing, floorDistance, deg, rad, round1, round2, norm180, norm360, LANG, FLOOR_LIMIT,
 } from './js/tour.js';
 
@@ -638,10 +649,100 @@ function toast(msg, ms = 3200) {
 }
 function markDirty() {
   dirty = true;
+  if (!restoring) scheduleHistory();
   $('status').textContent = '有未儲存的變更';
   $('status').classList.add('dirty');
   $('save-btn').disabled = false;
 }
+/* ================================================================ 復原／重做
+   每次變更後記一份 tour.json 的快照（打字時 0.4 秒內的變更合併成一步），最多 200 步。 */
+let hist = [], histPos = -1, histTimer = 0, restoring = false;
+function snapshot() { return JSON.stringify(data); }
+function updateUndoButtons() {
+  $('undo-btn').disabled = histPos <= 0;
+  $('redo-btn').disabled = histPos >= hist.length - 1;
+}
+function resetHistory() {
+  clearTimeout(histTimer);
+  histTimer = 0;
+  hist = data ? [snapshot()] : [];
+  histPos = hist.length - 1;
+  updateUndoButtons();
+}
+function recordHistory() {
+  histTimer = 0;
+  if (!data || histPos < 0) return;
+  const s = snapshot();
+  if (s === hist[histPos]) return;
+  hist = hist.slice(0, histPos + 1);
+  hist.push(s);
+  if (hist.length > 200) hist.shift();
+  histPos = hist.length - 1;
+  updateUndoButtons();
+}
+function scheduleHistory() {
+  clearTimeout(histTimer);
+  histTimer = setTimeout(recordHistory, 400);
+}
+function flushHistory() {
+  if (histTimer) { clearTimeout(histTimer); recordHistory(); }
+}
+async function undo() {
+  flushHistory();
+  if (histPos <= 0) return;
+  histPos--;
+  await restoreSnapshot(hist[histPos], '已復原上一步');
+}
+async function redo() {
+  flushHistory();
+  if (histPos >= hist.length - 1) return;
+  histPos++;
+  await restoreSnapshot(hist[histPos], '已重做');
+}
+async function restoreSnapshot(snap, msg) {
+  const before = referenced();
+  const curId = nav?.current?.id;
+  const areaId = currentArea?.id;
+  const next = JSON.parse(snap);
+  for (const k of Object.keys(data)) delete data[k];
+  Object.assign(data, next);
+  tour.reindex();
+  /* 復原後不再用到的圖檔（例如剛新增的場景），儲存時一併刪除；還有用到的不會刪 */
+  const after = referenced();
+  for (const p of before) if (!after.has(p)) pendingDeletes.add(p);
+  restoring = true;
+  try {
+    if (planMode || placingId) setPlanMode(null);
+    setMode(null);
+    selection = null;
+    $('tour-title').value = data.title || '';
+    $('tour-height').value = data.cameraHeight || 1.5;
+    currentArea = data.areas.find((a) => a.id === areaId) || tour.areaOf(curId) || data.areas[0];
+    const s = (curId && tour.scene(curId)) || (currentArea && tour.areaStart(currentArea)) || tour.firstScene();
+    if (plan) { plan.area = currentArea; plan.current = s || null; }   // 保留平面圖的縮放
+    renderAreas();
+    renderScenes();
+    if (nav && s) {
+      if (nav.current && nav.current.id === s.id) {
+        nav.current = s;
+        nav.refresh();
+        renderPanel();
+        renderStageNav();
+      } else {
+        nav.current = null;
+        await openScene(s.id);
+      }
+    } else if (!s) {
+      showEmpty();
+    }
+    markDirty();
+  } finally {
+    restoring = false;
+  }
+  updateUndoButtons();
+  toast(msg);
+}
+
 function markSaved(msg = '已儲存') {
   dirty = false;
   $('status').textContent = msg;
@@ -782,6 +883,7 @@ async function openProject(handle) {
   }
   const first = tour.firstScene();
   if (first) await openScene(first.id); else showEmpty();
+  resetHistory();
   buildThumbs();
 }
 
@@ -819,7 +921,16 @@ async function save() {
   }
 }
 $('save-btn').addEventListener('click', save);
+$('undo-btn').addEventListener('click', undo);
+$('redo-btn').addEventListener('click', redo);
 window.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  const typing = e.target.closest?.('input, textarea, select, [contenteditable]');
+  if ((e.ctrlKey || e.metaKey) && !typing && (k === 'z' || k === 'y') && data) {
+    e.preventDefault();
+    if (k === 'y' || e.shiftKey) redo(); else undo();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault();
     if (dirty) save();
@@ -1068,6 +1179,7 @@ async function ensureViewer(scene) {
     plugins: [[MarkersPlugin, { markers: [] }]],
   });
   markers = viewer.getPlugin(MarkersPlugin);
+  keepClearOfPanel(viewer, $('viewer'), () => [document.querySelector('.toolbar')]);
   nav = new Navigator({ viewer, markers, tour, resolve, build, onChange: onSceneChange });
   nav.preload = () => {};
   await new Promise((ok) => viewer.addEventListener('ready', ok, { once: true }));
@@ -1129,6 +1241,8 @@ async function walkTo(link) {
 }
 function onSceneChange(scene) {
   selection = null;
+  if (planMode === 'landmark') setPlanMode(null);
+  $('view-choice').hidden = true;
   calibRef = null;
   highlightRow();
   renderStageNav();
@@ -1173,11 +1287,27 @@ $('tool-tag').addEventListener('click', () => {
 });
 $('tool-view').addEventListener('click', () => {
   if (!nav?.current) return;
+  const box = $('view-choice');
+  if (!box.hidden) { box.hidden = true; return; }
+  const s = nav.current;
   const p = viewer.getPosition();
-  nav.current.view = { yaw: round1(norm180(deg(p.yaw))), pitch: round1(deg(p.pitch)) };
-  markDirty();
-  renderPanel();
-  toast('已把目前的視角設為進入這個場景時的方向。');
+  const v = { yaw: round1(norm180(deg(p.yaw))), pitch: round1(deg(p.pitch)) };
+  const arr = nav.arrivedBy;
+  const from = arr && tour.scene(arr.from);
+  const link = from && from.links[arr.index];
+  const done = (msg) => { box.hidden = true; markDirty(); renderPanel(); toast(msg, 5000); };
+  box.innerHTML = '';
+  box.append(el('p', {}, '把現在看的方向設為：'));
+  if (link && link.to === s.id) {
+    box.append(el('button', { class: 'btn small', type: 'button', onclick: () => { link.arrive = v; done(`之後從「${from.name}」走到「${s.name}」時，會面向這個方向。`); } },
+      `從「${from.name}」走過來時的方向（只影響這條路線）`));
+  }
+  box.append(el('button', { class: 'btn small', type: 'button', onclick: () => { s.view = v; delete s.fixedView; done('已設為進入視角：用選單、平面圖或網址跳到這裡時，會面向這個方向。'); } },
+    '用選單、平面圖跳過來時的方向（進入視角）'));
+  box.append(el('button', { class: 'btn small', type: 'button', onclick: () => { s.view = v; s.fixedView = true; done(`不論從哪裡進入「${s.name}」，都會面向這個方向。`); } },
+    '不論從哪裡來都用這個方向'));
+  box.append(el('button', { class: 'btn small', type: 'button', onclick: () => { box.hidden = true; } }, '取消'));
+  box.hidden = false;
 });
 function togglePreview(on = !preview) {
   preview = on;
@@ -1333,7 +1463,15 @@ function scenePanel(s) {
     el('span', { class: 'mono' }, s.file),
     el('div', { class: 'row' }, el('button', { class: 'btn small', type: 'button', onclick: () => $('file-replace').click() }, '換圖')),
   ));
-  sec.append(el('p', { class: 'note' }, `進入視角：yaw ${s.view.yaw}°、pitch ${s.view.pitch}°。轉到想要的方向後，按上方「設為進入視角」。`));
+  sec.append(el('p', { class: 'note' }, `進入視角：yaw ${s.view.yaw}°、pitch ${s.view.pitch}°。用選單、平面圖或網址跳到這裡時面向這個方向。轉到想要的方向後，按上方「設為進入視角」。`));
+  const fixed = el('input', { type: 'checkbox', checked: !!s.fixedView });
+  fixed.addEventListener('change', () => { if (fixed.checked) s.fixedView = true; else delete s.fixedView; markDirty(); });
+  sec.append(el('label', { class: 'check' }, fixed, ' 從白圈走進來時也一律用進入視角'));
+  for (const a of data.areas) for (const x of a.scenes) for (const l of x.links || []) {
+    if (l.to !== s.id || !l.arrive) continue;
+    sec.append(el('div', { class: 'row note' }, `從「${x.name}」走來時面向 yaw ${l.arrive.yaw}°`,
+      el('button', { class: 'btn small', type: 'button', onclick: () => { delete l.arrive; markDirty(); renderPanel(); } }, '清除')));
+  }
 
   const items = el('ul', { class: 'items' });
   s.links.forEach((l, i) => {
@@ -1389,8 +1527,19 @@ function positionSection(s) {
   const nudge = (d) => el('button', { class: 'btn small', type: 'button', onclick: () => setHeading((Number.isFinite(s.heading) ? s.heading : 0) + d) }, (d > 0 ? '+' : '−') + Math.abs(d) + '°');
   sec.append(el('div', { class: 'field' },
     el('span', { class: 'label' }, '方向（照片正中央朝向，0 = 平面圖上方，順時針）'),
-    el('div', { class: 'heading-row' }, nudge(-5), nudge(-1), hd, nudge(1), nudge(5))));
+    el('div', { class: 'heading-row' }, nudge(-5), nudge(-1), hd, nudge(1), nudge(5),
+      el('button', { class: 'btn small', type: 'button', title: '轉 180°：平面圖上的扇形整個反了時用', onclick: () => setHeading((Number.isFinite(s.heading) ? s.heading : 0) + 180) }, '↻180°'))));
   if (!Number.isFinite(s.heading)) sec.append(el('p', { class: 'note warn' }, '尚未校正方向，白圈可能不在正確位置。'));
+
+  /* 對準地標校正 */
+  sec.append(el('div', { class: 'field' },
+    el('span', { class: 'label' }, '對準地標校正方向（推薦）'),
+    el('div', { class: 'row' }, el('button', { class: 'btn small primary', type: 'button', onclick: () => {
+      if (preview) togglePreview(false);
+      setPlanMode(planMode === 'landmark' ? null : 'landmark');
+      renderPanel();
+    } }, planMode === 'landmark' ? '取消對準' : '對準地標校正')),
+    el('p', { class: 'note' }, '按下後轉動全景畫面，讓正中央的十字對準一個平面圖上找得到的東西（例如川堂入口、大樓轉角、另一個拍攝點），再到下方平面圖點那個位置。地標離這裡越遠越準。')));
 
   /* 點地面校正 */
   const refs = area.scenes.filter((x) => x !== s && placed(x))
@@ -1502,6 +1651,10 @@ function arrowField(l, g) {
   }
   const f = el('div', { class: 'field' }, el('span', { class: 'label' }, '箭頭方向'), row);
   if (g && g.pitch <= FLOOR_LIMIT) f.append(el('p', { class: 'note' }, '這個白圈在地上，不會顯示箭頭；直立的圓圈才會。'));
+  if (l.arrive) {
+    f.append(el('div', { class: 'row note' }, `走過去時面向 yaw ${l.arrive.yaw}°（自訂）`,
+      el('button', { class: 'btn small', type: 'button', onclick: () => { delete l.arrive; markDirty(); renderPanel(); } }, '清除')));
+  }
   return f;
 }
 
@@ -1592,6 +1745,18 @@ function tagPanel(s, i) {
   text.value = t.text || '';
   text.addEventListener('input', () => { t.text = text.value; markDirty(); });
   sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, '說明'), text));
+  sec.append(el('p', { class: 'note' }, '網址會自動變成超連結；想顯示文字就寫 [松山高中官網](https://www.sssh.tp.edu.tw)。'));
+  const video = el('input', { class: 'input', id: 'tag-video', type: 'url', value: t.video || '', placeholder: '貼上 YouTube 影片網址（可留空）' });
+  const vnote = el('p', { class: 'note' });
+  const checkVideo = () => {
+    const v = video.value.trim();
+    vnote.className = 'note' + (v && !youtubeId(v) ? ' warn' : '');
+    vnote.textContent = !v ? '影片會顯示在說明面板最上方。網址裡有 t=90 會從第 90 秒開始播。'
+      : youtubeId(v) ? '已設定影片，按「預覽模式」再點這個標籤就能看到。' : '看不懂這個網址，請貼 YouTube 影片頁面的網址。';
+  };
+  video.addEventListener('input', () => { const v = video.value.trim(); if (v) t.video = v; else delete t.video; markDirty(); checkVideo(); });
+  checkVideo();
+  sec.append(el('label', { class: 'field' }, el('span', { class: 'label' }, 'YouTube 影片'), video), vnote);
 
   const grid = el('div', { class: 'imgs' });
   t.images.forEach((p, k) => {
@@ -1705,10 +1870,30 @@ function setPlanMode(m) {
   $('scale-form').hidden = true;
   $('plan-connect').setAttribute('aria-pressed', String(m === 'connect'));
   $('plan-scale').setAttribute('aria-pressed', String(m === 'scale'));
-  $('plan-wrap').classList.toggle('placing', m === 'scale');
+  $('plan-wrap').classList.toggle('placing', m === 'scale' || m === 'landmark');
+  $('aim').hidden = m !== 'landmark';
   setPlanHint(m === 'connect' ? '依序點兩個拍攝點就連起來；點一條線會刪除它（Esc 結束）'
-    : m === 'scale' ? '在底圖上點兩個已知實際距離的點（例如一面牆的兩端）' : '');
+    : m === 'scale' ? '在底圖上點兩個已知實際距離的點（例如一面牆的兩端）'
+    : m === 'landmark' ? '轉動全景畫面讓十字對準地標，再在平面圖上點那個地標的位置（Esc 取消）' : '');
   refreshPlan();
+}
+
+/* 對準地標校正：畫面正中央對著平面圖上的 p → 方向 = p 的方位 − 目前的 yaw */
+function landmarkCalibrate(p, label) {
+  const s = nav?.current;
+  if (!s || !placed(s) || !viewer) { setPlanMode(null); return; }
+  const d = Math.hypot(p.x - s.x, p.y - s.y);
+  if (d < 1) { toast('點的位置離這個拍攝點太近了，請點遠一點的地標（3 公尺以上比較準）。'); return; }
+  const yaw = deg(viewer.getPosition().yaw);
+  s.heading = round1(norm360(bearing(s, p.x, p.y) - yaw));
+  setPlanMode(null);
+  nav.refresh();
+  plan?.setCurrent(s, yaw);
+  plan?.render();
+  renderPanel();
+  renderScenes();
+  markDirty();
+  toast(`方向已校正為 ${s.heading}°${label ? `（對準「${label}」）` : ''}。轉動畫面看看平面圖上的扇形有沒有跟著對準。`, 6000);
 }
 
 function startPlacing(id) {
@@ -1724,7 +1909,7 @@ function startPlacing(id) {
 }
 
 function onPlanNode(s) {
-  if (placingId || planMode === 'scale') return;
+  if (placingId || planMode === 'scale' || planMode === 'landmark') return;
   if (planMode === 'connect') {
     if (!connectFrom) {
       connectFrom = s.id;
@@ -1846,6 +2031,13 @@ function setupPlanEditing() {
     if (planMode === 'connect') {
       const ln = e.target.closest('.pv-link');
       if (ln) { removeConnection(ln.dataset.a, ln.dataset.b); refreshPlan(); }
+      return;
+    }
+    if (planMode === 'landmark') {
+      const nd = e.target.closest('.pv-node');
+      const t = nd && tour.scene(nd.dataset.id);
+      if (t && t === nav?.current) return;
+      landmarkCalibrate(t ? { x: t.x, y: t.y } : plan.toWorld(e.clientX, e.clientY), t?.name);
       return;
     }
     if (e.target.closest('.pv-node')) return;

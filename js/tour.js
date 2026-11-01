@@ -115,15 +115,55 @@ export function floorRing(yawDeg, pitchDeg, H, r = RING_R, n = 36) {
 }
 
 /* ------------------------------------------------------------ 標記 */
+/* 說明文字：[顯示文字](https://網址) 和直接寫的 https:// 網址都變成超連結（開新分頁） */
+export function linkify(text) {
+  const re = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[\x21-\x7e]+)/g;
+  const a = (url, label) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+  let out = '', last = 0, m;
+  while ((m = re.exec(text))) {
+    out += esc(text.slice(last, m.index));
+    if (m[2]) {
+      out += a(m[2], m[1]);
+    } else {
+      const url = m[3].replace(/[.,;:!?'")\]]+$/, '');   // 句尾的標點不算網址
+      out += a(url, url) + esc(m[3].slice(url.length));
+    }
+    last = re.lastIndex;
+  }
+  return out + esc(text.slice(last));
+}
+
+/* YouTube 網址 → 影片 id（11 碼），看不懂就回傳 null */
+export function youtubeId(url) {
+  const s = String(url || '').trim();
+  const m = s.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/);
+  if (m) return m[1];
+  return /^[\w-]{11}$/.test(s) ? s : null;
+}
+/* 網址裡的 t=90、t=1m30s、start=90 → 秒數 */
+function youtubeStart(url) {
+  const m = String(url || '').match(/[?&#](?:t|start)=(?:(\d+)h)?(?:(\d+)m)?(\d+)?s?(?:&|$)/);
+  if (!m) return 0;
+  return (Number(m[1]) || 0) * 3600 + (Number(m[2]) || 0) * 60 + (Number(m[3]) || 0);
+}
+export function youtubeEmbed(url) {
+  const id = youtubeId(url);
+  if (!id) return '';
+  const start = youtubeStart(url);
+  const src = `https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1${start ? '&start=' + start : ''}`;
+  return `<div class="tag-video"><iframe src="${esc(src)}" title="YouTube 影片" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`;
+}
+
 export function tagHtml(tag, resolve) {
+  const video = youtubeEmbed(tag.video);
   const imgs = (tag.images || []).map((p) => `<img src="${esc(resolve(p))}" alt="">`).join('');
   const body = String(tag.text || '')
     .split('\n')
     .map((p) => p.trim())
     .filter(Boolean)
-    .map((p) => `<p>${esc(p)}</p>`)
+    .map((p) => `<p>${linkify(p)}</p>`)
     .join('');
-  return `<article class="tag-panel">${imgs}<h2>${esc(tag.title)}</h2>${body}</article>`;
+  return `<article class="tag-panel">${video}${imgs}<h2>${esc(tag.title)}</h2>${body}</article>`;
 }
 
 /* 直立圓圈裡箭頭的方向（度，0 = 往前、順時針）；沒設定就是往前 */
@@ -192,6 +232,8 @@ export function cursorMarker() {
    手動白圈 → 若 to 有連回 from 的白圈，就背對它；
    都沒有 → to 自己設定的進入視角。 */
 export function arrivalPosition(tour, from, to, link) {
+  if (link && link.arrive) return { yaw: rad(link.arrive.yaw || 0), pitch: rad(link.arrive.pitch || 0) };   // 這條路線指定的抵達方向
+  if (to.fixedView) return viewOf(to);   // 這個場景一律用進入視角
   const g = from && link && linkGeom(tour, from, link);
   if (g && g.auto && Number.isFinite(to.heading)) {
     return { yaw: rad(norm180(g.bearing - to.heading)), pitch: rad(-4) };
@@ -265,6 +307,7 @@ export class Navigator {
       });
       this.markers.clearMarkers();
       await this.show(t, arrivalPosition(this.tour, from, t, link), { speed: 700, rotation: false, effect: 'fade' }, zoom);
+      this.arrivedBy = { from: from.id, index: (from.links || []).indexOf(link) };   // 編輯器「設為進入視角」用
     } catch (e) {
       console.error(e);
       this.refresh();
@@ -273,19 +316,15 @@ export class Navigator {
     }
   }
 
-  /* 直接跳到某個場景（下拉選單、平面圖），保留目前面向的方位 */
+  /* 直接跳到某個場景（下拉選單、平面圖、網址），面向它的進入視角 */
   async jump(id) {
     const t = this.tour.scene(id);
     if (!t || this.busy) return;
     if (this.current && t.id === this.current.id) return;
     this.busy = true;
     try {
-      let pos = viewOf(t);
-      const c = this.current;
-      if (c && Number.isFinite(c.heading) && Number.isFinite(t.heading) && this.tour.areaOf(c.id) === this.tour.areaOf(t.id)) {
-        const b = c.heading + deg(this.viewer.getPosition().yaw);
-        pos = { yaw: rad(norm180(b - t.heading)), pitch: 0 };
-      }
+      const pos = viewOf(t);
+      this.arrivedBy = null;
       this.markers.clearMarkers();
       await this.show(t, pos, { speed: 500, rotation: false, effect: 'black' });
     } catch (e) {
@@ -310,8 +349,14 @@ export class Navigator {
     return best && best.l;
   }
 
+  /* 游標圈只更新自己（render = false），不然外掛會把打開中的說明面板整個重畫：捲動跳回頂端、影片被重新載入 */
   hideCursor() {
-    try { this.markers.updateMarker({ id: 'cursor', opacity: 0 }); } catch (e) { /* 沒有游標圈 */ }
+    if (this.cursorHidden) return;
+    try {
+      this.markers.updateMarker({ id: 'cursor', opacity: 0 }, false);
+      this.cursorHidden = true;
+      this.viewer.needsUpdate();
+    } catch (e) { /* 沒有游標圈 */ }
   }
 
   /* 滑鼠在地面上移動時，顯示跟著走的圈（觸控裝置不顯示） */
@@ -326,6 +371,7 @@ export class Navigator {
         raf = 0;
         if (!this.current || this.busy || !last) return;
         if (!isEnabled()) { this.hideCursor(); return; }
+        if (last.target?.closest?.('.psv-panel, .psv-navbar')) { this.hideCursor(); return; }
         const r = container.getBoundingClientRect();
         let pos;
         try {
@@ -334,12 +380,34 @@ export class Navigator {
         const p = pos && deg(pos.pitch);
         if (!pos || p > -4 || floorDistance(p, this.tour.H) > 12) { this.hideCursor(); return; }
         try {
-          this.markers.updateMarker({ id: 'cursor', opacity: 1, polygon: floorRing(deg(pos.yaw), p, this.tour.H, CURSOR_R, 24) });
+          this.markers.updateMarker({ id: 'cursor', opacity: 1, polygon: floorRing(deg(pos.yaw), p, this.tour.H, CURSOR_R, 24) }, false);
+          this.cursorHidden = false;
+          this.viewer.needsUpdate();
         } catch (err) { /* 標記尚未建立 */ }
       });
     });
     container.addEventListener('pointerleave', () => this.hideCursor());
   }
+}
+
+/* 說明面板打開時，把會和它重疊的浮動元件（標題列、小地圖、工具列）暫時藏起來 */
+export function keepClearOfPanel(viewer, root, getEls) {
+  const update = () => {
+    const panel = root.querySelector('.psv-panel');
+    const open = !!panel && panel.classList.contains('psv-panel--open');
+    const left = open ? root.getBoundingClientRect().right - panel.offsetWidth : Infinity;
+    for (const el of getEls()) {
+      if (!el) continue;
+      el.classList.remove('under-panel');
+      if (open && el.getBoundingClientRect().right > left - 4) el.classList.add('under-panel');
+    }
+  };
+  const later = () => requestAnimationFrame(update);
+  viewer.addEventListener('show-panel', later);
+  viewer.addEventListener('hide-panel', later);
+  root.addEventListener('pointerup', later);   // 拖曳調整面板寬度之後
+  window.addEventListener('resize', update);
+  return update;
 }
 
 /* ------------------------------------------------------------ 平面圖 */
