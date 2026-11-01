@@ -291,6 +291,8 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 .aim::before, .aim::after { content: ""; position: absolute; background: #ff7a45; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); }
 .aim::before { left: 22px; top: 0; width: 2px; height: 46px; }
 .aim::after { top: 22px; left: 0; width: 46px; height: 2px; }
+.import-box:not([hidden]) { display: grid; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 7px; }
+.import-box .check { display: flex; gap: 6px; align-items: center; }
 .tool-sep { width: 1px; align-self: stretch; margin: 2px 2px; background: rgba(255, 255, 255, 0.2); }
 .hint {
   position: absolute;
@@ -418,7 +420,9 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
         <button class="btn small" id="area-add" type="button" disabled>新增區域</button>
         <button class="btn small" id="area-rename" type="button" disabled>重新命名</button>
         <button class="btn small danger" id="area-del" type="button" disabled>刪除區域</button>
+        <button class="btn small" id="area-import" type="button" disabled title="把同仁用這個編輯器做的區域併進來">匯入區域</button>
       </div>
+      <div class="import-box" id="import-box" hidden></div>
       <div class="inline-form" id="area-form" hidden>
         <input class="input" id="area-name" type="text" aria-label="區域名稱">
         <div class="row"><button class="btn small primary" id="area-ok" type="button">確定</button><button class="btn small" id="area-cancel" type="button">取消</button></div>
@@ -761,7 +765,7 @@ function el(tag, attrs = {}, ...kids) {
   return e;
 }
 function setEnabled(on) {
-  for (const id of ['tour-title', 'tour-height', 'area-select', 'area-add', 'area-rename', 'area-del', 'add-scene',
+  for (const id of ['tour-title', 'tour-height', 'area-select', 'area-add', 'area-rename', 'area-del', 'area-import', 'add-scene',
     'plan-connect', 'plan-auto', 'plan-image', 'plan-fit', 'plan-fit-pts', 'plan-zoom-in', 'plan-zoom-out']) $(id).disabled = !on;
 }
 function toolsEnabled(on) {
@@ -2153,7 +2157,130 @@ function setupPlanEditing() {
 }
 
 /* 讓自動測試可以直接指定資料夾（一般使用不會用到） */
-window.tourEditor = { openProject, open: openScene, tour: () => tour, data: () => data };
+/* ================================================================ 匯入區域
+   把另一個導覽資料夾（同仁用這個編輯器做的）裡的區域併進來：
+   複製圖檔、id 或檔名重複就改名、連到沒匯入的區域的白圈拿掉。 */
+async function srcFile(src, path) {
+  const parts = path.split('/').filter(Boolean);
+  let d = src;
+  for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+  return (await d.getFileHandle(parts[parts.length - 1])).getFile();
+}
+$('area-import').addEventListener('click', async () => {
+  if (!data || !dir) return;
+  let src;
+  try { src = await window.showDirectoryPicker({ id: 'tour-import', mode: 'read' }); } catch (e) { return; }
+  if (await src.isSameEntry(dir)) { toast('這就是目前開著的資料夾，請選同仁的導覽資料夾。'); return; }
+  let other;
+  try { other = JSON.parse(await (await srcFile(src, 'tour.json')).text()); } catch (e) {
+    toast('這個資料夾裡沒有可讀的 tour.json，請選同仁用這個編輯器做的導覽資料夾。', 6000);
+    return;
+  }
+  showImportBox(src, other);
+});
+function showImportBox(src, other) {
+  const areas = (other.areas || []).filter((a) => (a.scenes || []).length);
+  const box = $('import-box');
+  box.innerHTML = '';
+  if (!areas.length) { toast('這個資料夾裡沒有任何場景。'); box.hidden = true; return; }
+  box.append(el('strong', {}, `從「${src.name}」匯入`));
+  const checks = areas.map((a) => {
+    const cb = el('input', { type: 'checkbox', checked: true });
+    box.append(el('label', { class: 'check' }, cb, `${a.name}（${a.scenes.length} 個場景）`));
+    return cb;
+  });
+  const h1 = Number(other.cameraHeight) || 1.5, h0 = Number(data.cameraHeight) || 1.5;
+  if (Math.abs(h1 - h0) > 0.01) box.append(el('p', { class: 'note warn' }, `對方的相機離地高度是 ${h1} 公尺，這裡是 ${h0} 公尺（整個網站共用一個值）。`));
+  box.append(el('div', { class: 'row' },
+    el('button', { class: 'btn small primary', type: 'button', onclick: async (e) => {
+      const chosen = areas.filter((a, i) => checks[i].checked);
+      if (!chosen.length) { toast('請至少勾選一個區域。'); return; }
+      e.target.disabled = true;
+      try { await importAreas(src, chosen); box.hidden = true; } catch (err) { toast('匯入失敗：' + err.message, 8000); e.target.disabled = false; }
+    } }, '匯入'),
+    el('button', { class: 'btn small', type: 'button', onclick: () => { box.hidden = true; } }, '取消')));
+  box.hidden = false;
+}
+async function importAreas(src, chosen) {
+  const incoming = JSON.parse(JSON.stringify(chosen));
+  const takenScene = new Set(tour.byId.keys());
+  const takenArea = new Set(data.areas.map((a) => a.id));
+  const used = referenced();
+  const sceneMap = new Map();
+  let renamed = 0, dropped = 0, copied = 0, missing = 0;
+  for (const a of incoming) {
+    if (!a.id || takenArea.has(a.id)) { a.id = uid('area'); renamed++; }
+    takenArea.add(a.id);
+    a.scenes = a.scenes || [];
+    for (const s of a.scenes) {
+      const old = s.id;
+      if (!s.id || takenScene.has(s.id)) { s.id = uid('s'); renamed++; }
+      takenScene.add(s.id);
+      sceneMap.set(old, s.id);
+      s.links = s.links || [];
+      s.tags = s.tags || [];
+      s.view = s.view || { yaw: 0, pitch: 0 };
+    }
+  }
+  for (const a of incoming) {
+    a.start = sceneMap.get(a.start) || a.scenes[0]?.id || '';
+    for (const s of a.scenes) {
+      const n = s.links.length;
+      s.links = s.links.filter((l) => sceneMap.has(l.to));
+      dropped += n - s.links.length;
+      for (const l of s.links) l.to = sceneMap.get(l.to);
+    }
+  }
+  const pathMap = new Map();
+  const total = new Set();
+  for (const a of incoming) {
+    if (a.plan?.image) total.add(a.plan.image);
+    for (const s of a.scenes) { total.add(s.file); for (const t of s.tags) for (const p of t.images || []) total.add(p); }
+  }
+  const copy = async (p) => {
+    if (!p) return p;
+    if (pathMap.has(p)) return pathMap.get(p);
+    let np = p;
+    if (used.has(np) || await exists(np)) {
+      const dot = p.lastIndexOf('.') > p.lastIndexOf('/') ? p.lastIndexOf('.') : p.length;
+      do { np = `${p.slice(0, dot)}-${Math.random().toString(36).slice(2, 6)}${p.slice(dot)}`; } while (used.has(np) || await exists(np));
+      renamed++;
+    }
+    toast(`複製檔案 ${pathMap.size + 1}／${total.size}`, 60000);
+    try { await writeFile(np, await srcFile(src, p)); copied++; } catch (e) { missing++; }
+    used.add(np);
+    pathMap.set(p, np);
+    return np;
+  };
+  for (const a of incoming) {
+    if (a.plan?.image) a.plan.image = await copy(a.plan.image);
+    for (const s of a.scenes) {
+      s.file = await copy(s.file);
+      for (const t of s.tags) {
+        const imgs = [];
+        for (const p of t.images || []) imgs.push(await copy(p));
+        t.images = imgs;
+      }
+    }
+  }
+  data.areas.push(...incoming);
+  tour.reindex();
+  currentArea = incoming[0];
+  renderAreas();
+  renderScenes();
+  markDirty();
+  buildThumbs();
+  const first = tour.areaStart(currentArea);
+  if (first) await openScene(first.id);
+  const nScenes = incoming.reduce((n, a) => n + a.scenes.length, 0);
+  toast(`已匯入 ${incoming.length} 個區域、${nScenes} 個場景，複製 ${copied} 個檔案。`
+    + (renamed ? `有 ${renamed} 個名稱重複，已自動改名。` : '')
+    + (dropped ? `有 ${dropped} 個白圈連到沒有匯入的區域，已拿掉。` : '')
+    + (missing ? `有 ${missing} 個檔案在對方資料夾裡找不到。` : '')
+    + '確認沒問題再按「儲存」。', 10000);
+}
+
+window.tourEditor = { openProject, open: openScene, tour: () => tour, data: () => data, importAreas };
 </script>
 </body>
 </html>
