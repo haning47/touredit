@@ -36,8 +36,11 @@ export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export const FLOOR_LIMIT = -3;   // 手動白圈 pitch 低於這個角度就畫在地上
-const RING_R = 0.42;             // 地上白圈半徑（公尺）
-const CURSOR_R = 0.3;            // 滑鼠游標圈半徑
+const RING_R = 0.2;              // 地上白圈半徑（公尺），和 Matterport 一樣
+const RING_IN = 0.65;            // 白環內緣（半徑的比例），以內鏤空
+const RING_OUT = 0.97;           // 白環外緣（半徑的比例）
+const RING_HIT = 0.3;            // 滑鼠落在白圈中心幾公尺內就算指到（白圈本身 0.2，放寬一點）
+const RING_HIT_PX = 18;          // 遠處的白圈在畫面上很小：離圓心幾像素內也算指到
 
 export const placed = (s) => !!s && Number.isFinite(s.x) && Number.isFinite(s.y);
 export const isManual = (l) => Number.isFinite(l.yaw) && Number.isFinite(l.pitch);
@@ -60,7 +63,8 @@ export class Tour {
   scene(id) { return this.byId.get(id); }
   areaOf(id) { return this.areaById.get(id); }
   areaStart(area) {
-    return (area.start && this.areaOf(area.start) === area && this.scene(area.start)) || area.scenes[0] || null;
+    return (area.start && this.areaOf(area.start) === area && this.scene(area.start))
+      || area.scenes.find((s) => !s.transit) || area.scenes[0] || null;   // 過渡場景不當起點
   }
   firstScene() {
     const s = this.scene(this.data.start);
@@ -112,6 +116,11 @@ export function floorRing(yawDeg, pitchDeg, H, r = RING_R, n = 36) {
     pts.push([Math.atan2(px, py), -Math.atan2(H, Math.hypot(px, py))]);
   }
   return pts;
+}
+
+/* 地上的白圈（照 Matterport）：外緣、內緣兩個圓，中間挖空，只留一圈白環 */
+export function floorPuck(yawDeg, pitchDeg, H, r = RING_R) {
+  return [floorRing(yawDeg, pitchDeg, H, r * RING_OUT, 40), floorRing(yawDeg, pitchDeg, H, r * RING_IN, 40)];
 }
 
 /* ------------------------------------------------------------ 標記 */
@@ -172,6 +181,61 @@ export function arrowStyle(link) {
   return Number.isFinite(a) && a % 360 !== 0 ? ` style="--arrow:${a}deg"` : '';
 }
 
+/* 白圈要顯示的目的地名稱：目標是過渡場景（transit）時，往前找到下一個主要場景；
+   找不到或有好幾個岔路，就用過渡場景自己的名稱 */
+export function destScene(tour, from, to) {
+  if (!to || !to.transit) return to;
+  const seen = new Set([from && from.id, to.id]);
+  let frontier = [to];
+  for (let step = 0; step < 12 && frontier.length; step++) {
+    const next = [], found = new Set();
+    for (const s of frontier) {
+      for (const l of s.links || []) {
+        const t = tour.scene(l.to);
+        if (!t || seen.has(t.id)) continue;
+        seen.add(t.id);
+        if (t.transit) next.push(t); else found.add(t);
+      }
+    }
+    if (found.size === 1 && !next.length) return [...found][0];
+    if (found.size) return to;
+    frontier = next;
+  }
+  return to;
+}
+
+/* 站在過渡場景時，「地點」選單要顯示的主要場景：平面圖上最近的；沒放平面圖就沿白圈找最少步的 */
+export function nearestMain(tour, scene) {
+  if (!scene || !scene.transit) return scene;
+  const area = tour.areaOf(scene.id);
+  const mains = (area?.scenes || []).filter((s) => !s.transit);
+  if (placed(scene)) {
+    let best = null, bd = Infinity;
+    for (const s of mains) {
+      if (!placed(s)) continue;
+      const d = Math.hypot(s.x - scene.x, s.y - scene.y);
+      if (d < bd) { bd = d; best = s; }
+    }
+    if (best) return best;
+  }
+  const seen = new Set([scene.id]);
+  let frontier = [scene];
+  while (frontier.length) {
+    const next = [];
+    for (const s of frontier) {
+      for (const l of s.links || []) {
+        const t = tour.scene(l.to);
+        if (!t || seen.has(t.id)) continue;
+        seen.add(t.id);
+        if (!t.transit && tour.areaOf(t.id) === area) return t;
+        next.push(t);
+      }
+    }
+    frontier = next;
+  }
+  return mains[0] || scene;
+}
+
 /* 回傳 null 表示這個連結目前畫不出來（例如自動白圈但還沒放到平面圖） */
 export function linkMarker(tour, scene, link, i, selected = false) {
   const g = linkGeom(tour, scene, link);
@@ -179,15 +243,17 @@ export function linkMarker(tour, scene, link, i, selected = false) {
   const t = tour.scene(link.to);
   const fromArea = tour.areaOf(scene.id);
   const toArea = t && tour.areaOf(t.id);
-  const label = t ? '前往 ' + t.name + (toArea && toArea !== fromArea ? '（' + toArea.name + '）' : '') : '連結的場景不存在';
-  const cls = (selected ? ' is-selected' : '') + (t ? '' : ' is-broken');
+  const d = destScene(tour, scene, t);
+  const dArea = d && tour.areaOf(d.id);
+  const label = t ? '前往 ' + d.name + (dArea && dArea !== fromArea ? '（' + dArea.name + '）' : '') : '連結的場景不存在';
+  const cls = (selected ? ' is-selected' : '') + (t ? '' : ' is-broken') + (t && t.transit ? ' to-transit' : '');
   const base = {
     id: 'link-' + i,
-    tooltip: { content: esc(label), position: 'top center' },
+    tooltip: { content: esc(label), position: 'top center', className: 'link-tip' },
     data: { type: 'link', index: i },
   };
   if (g.pitch <= FLOOR_LIMIT) {
-    return { ...base, polygon: floorRing(g.yaw, g.pitch, tour.H), className: 'floor-ring' + cls, zIndex: 5 };
+    return { ...base, polygon: floorPuck(g.yaw, g.pitch, tour.H), className: 'floor-ring' + cls, zIndex: 5 };
   }
   return {
     ...base,
@@ -219,7 +285,7 @@ export function tagMarker(tag, i, { selected = false, content = null } = {}) {
 export function cursorMarker() {
   return {
     id: 'cursor',
-    polygon: floorRing(0, -30, 1.5, CURSOR_R, 24),
+    polygon: floorPuck(0, -30, 1.5),   // 和地上白圈同樣大小、同樣樣式
     className: 'floor-cursor',
     opacity: 0,
     data: { type: 'cursor' },
@@ -266,7 +332,21 @@ export class Navigator {
   }
 
   refresh() {
+    this.nearId = null;
+    this.tipId = null;
     if (this.current) this.markers.setMarkers(this.build(this.current).filter(Boolean));
+  }
+
+  /* 游標圈在地面上時，把它朝向的那個白圈標成 near（和滑鼠指到一樣變亮） */
+  markNear(link) {
+    const i = link ? (this.current?.links || []).indexOf(link) : -1;
+    const id = i >= 0 ? 'link-' + i : null;
+    if (id === this.nearId) return;
+    for (const [x, on] of [[this.nearId, false], [id, true]]) {
+      if (!x) continue;
+      try { this.markers.getMarker(x).domElement?.classList.toggle('near', on); } catch (e) { /* 標記已不存在 */ }
+    }
+    this.nearId = id;
   }
 
   async show(scene, position, transition, zoom) {
@@ -335,6 +415,54 @@ export class Navigator {
     }
   }
 
+  /* 滑鼠底下的地上白圈：白圈中間是空的，只靠瀏覽器判斷的話要剛好指在白環上才算，
+     所以自己算：地面上離圓心 RING_HIT 公尺內，或畫面上離圓心 RING_HIT_PX 像素內（遠處很小的白圈）。
+     vx、vy 是滑鼠在全景畫面裡的座標（像素）。 */
+  linkUnder(yawDeg, pitchDeg, vx, vy) {
+    if (!this.current || pitchDeg > -2) return null;
+    const H = this.tour.H;
+    const d = floorDistance(pitchDeg, H);
+    const mx = d * Math.sin(rad(yawDeg));
+    const my = d * Math.cos(rad(yawDeg));
+    let best = null;
+    for (const l of this.current.links || []) {
+      if (!this.tour.scene(l.to)) continue;
+      const g = linkGeom(this.tour, this.current, l);
+      if (!g || g.pitch > FLOOR_LIMIT || Math.abs(norm180(g.yaw - yawDeg)) > 60) continue;
+      const gd = floorDistance(g.pitch, H);
+      const m = Math.hypot(gd * Math.sin(rad(g.yaw)) - mx, gd * Math.cos(rad(g.yaw)) - my) / RING_HIT;
+      let px = Infinity;
+      if (Number.isFinite(vx) && Number.isFinite(vy)) {
+        try {
+          const c = this.viewer.dataHelper.sphericalCoordsToViewerCoords({ yaw: rad(g.yaw), pitch: rad(g.pitch) });
+          px = Math.hypot(c.x - vx, c.y - vy) / RING_HIT_PX;
+        } catch (e) { /* 算不出來就只看地面距離 */ }
+      }
+      const score = Math.min(m, px);
+      if (score <= 1 && (!best || score < best.score)) best = { l, score };
+    }
+    return best && best.l;
+  }
+
+  /* 點地面或游標圈要指向哪個白圈：先看滑鼠底下有沒有白圈，沒有才找那個方向最接近的 */
+  linkAt(yawDeg, pitchDeg, vx, vy) {
+    return this.linkUnder(yawDeg, pitchDeg, vx, vy) || this.linkToward(yawDeg, pitchDeg);
+  }
+
+  /* 滑鼠在白圈上（含中間鏤空的地方）時，固定顯示它的「前往 ○○」 */
+  showTip(link) {
+    const i = link ? (this.current?.links || []).indexOf(link) : -1;
+    let id = i >= 0 ? 'link-' + i : null;
+    if (id === this.tipId) return;
+    if (this.tipId) {
+      try { this.markers.hideMarkerTooltip(this.tipId); } catch (e) { /* 標記已不存在 */ }
+    }
+    if (id) {
+      try { this.markers.showMarkerTooltip(id); } catch (e) { id = null; }
+    }
+    this.tipId = id;
+  }
+
   /* 點地面：找出那個方向最接近的連結 */
   linkToward(yawDeg, pitchDeg) {
     if (!this.current || pitchDeg > -2) return null;
@@ -351,6 +479,8 @@ export class Navigator {
 
   /* 游標圈只更新自己（render = false），不然外掛會把打開中的說明面板整個重畫：捲動跳回頂端、影片被重新載入 */
   hideCursor() {
+    this.markNear(null);
+    this.showTip(null);
     if (this.cursorHidden) return;
     try {
       this.markers.updateMarker({ id: 'cursor', opacity: 0 }, false);
@@ -379,8 +509,12 @@ export class Navigator {
         } catch (err) { return; }
         const p = pos && deg(pos.pitch);
         if (!pos || p > -4 || floorDistance(p, this.tour.H) > 12) { this.hideCursor(); return; }
+        const vx = last.clientX - r.left, vy = last.clientY - r.top;
+        const under = this.linkUnder(deg(pos.yaw), p, vx, vy);
+        this.showTip(under);
+        this.markNear(under || this.linkToward(deg(pos.yaw), p));
         try {
-          this.markers.updateMarker({ id: 'cursor', opacity: 1, polygon: floorRing(deg(pos.yaw), p, this.tour.H, CURSOR_R, 24) }, false);
+          this.markers.updateMarker({ id: 'cursor', opacity: 1, polygon: floorPuck(deg(pos.yaw), p, this.tour.H) }, false);
           this.cursorHidden = false;
           this.viewer.needsUpdate();
         } catch (err) { /* 標記尚未建立 */ }
@@ -424,7 +558,8 @@ function svgEl(tag, attrs = {}, parent = null) {
  * 瀏覽頁用來顯示小地圖，編輯器用來拖曳拍攝點、連線、設定比例尺。
  */
 export class PlanView {
-  constructor(svg, { tour, resolve = (p) => p, onNode = null, zoomable = false, labels = 'all', fitTo = 'points' } = {}) {
+  constructor(svg, { tour, resolve = (p) => p, onNode = null, zoomable = false, labels = 'all', fitTo = 'points', showTransit = false } = {}) {
+    this.showTransit = showTransit;   // 導覽頁不畫過渡場景的點，編輯器要畫
     this.fitMode = fitTo;   // 'points' = 對準拍攝點，'all' = 整張底圖
     this.svg = svg;
     this.tour = tour;
@@ -626,8 +761,10 @@ export class PlanView {
     for (const s of this.area.scenes) {
       if (!placed(s)) continue;
       const isCur = this.current && this.current.id === s.id;
+      const hideT = s.transit && !this.showTransit;
+      if (hideT && !isCur) continue;   // 過渡場景：只有站在上面時才顯示目前位置
       const g = svgEl('g', {
-        class: 'pv-node' + (isCur ? ' here' : '') + (this.highlight.has(s.id) ? ' hl' : '') + (Number.isFinite(s.heading) ? '' : ' no-heading'),
+        class: 'pv-node' + (isCur ? ' here' : '') + (this.highlight.has(s.id) ? ' hl' : '') + (Number.isFinite(s.heading) ? '' : ' no-heading') + (s.transit ? ' transit' : ''),
         'data-id': s.id,
         transform: `translate(${s.x} ${-s.y})`,
         tabindex: '0',
@@ -636,8 +773,8 @@ export class PlanView {
       }, nodes);
       const title = svgEl('title', {}, g);
       title.textContent = s.name;
-      svgEl('circle', { r: (isCur ? 8 : 6.5) * u, 'stroke-width': 2 * u }, g);
-      if (this.labels === 'all' || (this.labels === 'current' && isCur)) {
+      svgEl('circle', { r: (isCur ? 8 : s.transit ? 4.5 : 6.5) * u, 'stroke-width': 2 * u }, g);
+      if (!hideT && (this.labels === 'all' || (this.labels === 'current' && isCur))) {
         const t = svgEl('text', { y: -11 * u, 'font-size': 11.5 * u, 'stroke-width': 3 * u }, g);
         t.textContent = s.name;
       }
@@ -669,8 +806,405 @@ export class PlanView {
   }
 }
 
+/* ------------------------------------------------------------ Cardboard VR
+   用官方 Stereo 外掛把畫面分成左右眼，另外處理：
+   - 換場景時程式會「停止所有動作」，不讓它把 VR 和陀螺儀關掉
+   - 點螢幕（Cardboard 的按鈕）＝ 選目前看著的白圈，不是離開
+   - 白圈改用 3D 圖層，左右眼都看得到；注視 1.5 秒就走過去
+   - 低頭看「離開 VR」1.5 秒、或離開全螢幕（返回鍵），就結束 */
+const VR_DWELL = 1500;
+const VR_HIT = rad(7);
+const VR_EXIT_PITCH = rad(-80);
+const vrTex = new Map();
+function vrTexture(key, w, h, draw) {
+  if (vrTex.has(key)) return vrTex.get(key);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const url = c.toDataURL('image/png');
+  vrTex.set(key, url);
+  return url;
+}
+function vrLabel(g, text, x, y, maxW, size = 38) {
+  g.font = `700 ${size}px "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  let t = String(text || '');
+  if (g.measureText(t).width > maxW) {
+    while (t.length > 1 && g.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+    t += '…';
+  }
+  g.lineJoin = 'round';
+  g.lineWidth = 9;
+  g.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+  g.strokeText(t, x, y);
+  g.fillStyle = '#fff';
+  g.fillText(t, x, y);
+}
+function vrRing(label, arrow) {
+  return vrTexture(`ring|${label}|${arrow}`, 256, 320, (g, w) => {
+    const cx = w / 2, cy = 118, R = 100;
+    /* 和地上的白圈同樣比例（照 Matterport）：白環在半徑 65%～97%，內外緣淡淡的黑邊，中心鏤空 */
+    const band = (r0, r1, color) => {
+      g.beginPath();
+      g.arc(cx, cy, r1, 0, Math.PI * 2);
+      g.arc(cx, cy, r0, 0, Math.PI * 2, true);
+      g.fillStyle = color;
+      g.fill();
+    };
+    band(R * RING_OUT, R, 'rgba(0, 0, 0, 0.1)');
+    band(R * RING_IN, R * RING_OUT, 'rgba(255, 255, 255, 0.64)');
+    band(R * 0.62, R * RING_IN, 'rgba(0, 0, 0, 0.13)');
+    g.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    g.shadowBlur = 10;
+    g.lineWidth = 12;
+    g.strokeStyle = '#fff';
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(rad(arrow || 0));
+    g.beginPath();
+    g.moveTo(-34, 16);
+    g.lineTo(0, -20);
+    g.lineTo(34, 16);
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.stroke();
+    g.restore();
+    g.shadowBlur = 0;
+    vrLabel(g, label, cx, 282, w - 8);
+  });
+}
+function vrExitPlate() {
+  return vrTexture('exit', 320, 140, (g, w, h) => {
+    g.fillStyle = 'rgba(20, 24, 22, 0.82)';
+    g.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    g.lineWidth = 6;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(6, 6, w - 12, h - 12, 28); else g.rect(6, 6, w - 12, h - 12);
+    g.fill();
+    g.stroke();
+    vrLabel(g, '離開 VR', w / 2, h / 2, w - 30, 52);
+  });
+}
+/* 每支手機自己的 VR 設定（左右距離、畫面大小），存在瀏覽器裡 */
+const VR_CFG_KEY = 'sssh-tour-vr';
+function loadVrCfg() {
+  try { return JSON.parse(localStorage.getItem(VR_CFG_KEY)) || {}; } catch (e) { return {}; }
+}
+function saveVrCfg(cfg) {
+  try { localStorage.setItem(VR_CFG_KEY, JSON.stringify(cfg)); } catch (e) { /* 無痕模式等存不了 */ }
+}
+function angDist(a, b) {
+  const c = Math.sin(a.pitch) * Math.sin(b.pitch) + Math.cos(a.pitch) * Math.cos(b.pitch) * Math.cos(a.yaw - b.yaw);
+  return Math.acos(Math.max(-1, Math.min(1, c)));
+}
+
+export class CardboardVR {
+  /**
+   * @param o.viewer  Photo Sphere Viewer
+   * @param o.markers Markers 外掛
+   * @param o.gyro    Gyroscope 外掛
+   * @param o.stereo  Stereo 外掛
+   * @param o.nav     Navigator
+   * @param o.tour    Tour
+   */
+  constructor(o) {
+    Object.assign(this, o);
+    this.on = false;
+    this.targets = [];
+    this.gaze = null;
+    this.elapsed = 0;
+    this.cool = 0;
+    this.loop = this.loop.bind(this);
+    const s0 = this.stereo.handleEvent.bind(this.stereo);
+    this.stereo.handleEvent = (e) => {
+      if (this.on && e.type === 'stop-all') return;
+      if (this.on && e.type === 'click') { this.tap(); return; }
+      s0(e);
+    };
+    const g0 = this.gyro.handleEvent.bind(this.gyro);
+    this.gyro.handleEvent = (e) => {
+      if (this.on && e.type === 'stop-all') return;
+      g0(e);
+    };
+    this.stereo.addEventListener('stereo-updated', (e) => this.setOn(e.stereoEnabled));
+    this.viewer.addEventListener('fullscreen', (e) => {
+      if (this.on && !e.fullscreenEnabled) this.stereo.stop();
+    });
+    this.cfg = loadVrCfg();
+    this.reticles = [25, 75].map((x) => {
+      const el = document.createElement('div');
+      el.className = 'vr-reticle';
+      el.style.left = x + '%';
+      el.innerHTML = '<svg viewBox="0 0 40 40" aria-hidden="true"><circle class="bg" cx="20" cy="20" r="14"/>'
+        + '<circle class="fg" cx="20" cy="20" r="14" pathLength="100" stroke-dasharray="0 100"/><circle class="dot" cx="20" cy="20" r="3"/></svg>';
+      this.viewer.container.appendChild(el);
+      return el;
+    });
+    this.buildSetup();
+  }
+
+  /* 左右眼畫面的位置：兩個畫面中心相距 sep 像素（對準 Cardboard 的兩片鏡片） */
+  layout() {
+    const W = this.viewer.container.clientWidth || window.innerWidth;
+    const H = this.viewer.container.clientHeight || window.innerHeight;
+    const def = Math.round(W * 0.42);
+    const sep = Math.round(Math.max(W * 0.25, Math.min(W * 0.6, this.cfg.sep || def)));
+    const eyeW = Math.max(1, Math.min(sep, W - sep));
+    return { W, H, sep, def, eyeW, cx: [W / 2 - sep / 2, W / 2 + sep / 2] };
+  }
+
+  /* 取代官方的左右眼繪圖：兩眼用同一個相機（全景照沒有立體深度，這樣不會重影），位置照 layout() */
+  effect(renderer) {
+    const vr = this;
+    return {
+      render(scene, camera) {
+        const L = vr.layout();
+        const aspect = camera.aspect;
+        camera.aspect = L.eyeW / L.H;
+        camera.updateProjectionMatrix();
+        const autoClear = renderer.autoClear;
+        renderer.autoClear = false;
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, L.W, L.H);
+        renderer.clear();
+        renderer.setScissorTest(true);
+        for (const cx of L.cx) {
+          const x = Math.round(cx - L.eyeW / 2);
+          renderer.setScissor(x, 0, L.eyeW, L.H);
+          renderer.setViewport(x, 0, L.eyeW, L.H);
+          renderer.render(scene, camera);
+        }
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, L.W, L.H);
+        renderer.autoClear = autoClear;
+        camera.aspect = aspect;
+        camera.updateProjectionMatrix();
+      },
+    };
+  }
+
+  /* 「⚙ 調整眼鏡」：拿出手機時調整左右距離和畫面大小 */
+  buildSetup() {
+    const c = this.viewer.container;
+    const stop = (el) => {
+      for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'dblclick', 'wheel']) {
+        el.addEventListener(t, (e) => e.stopPropagation());
+      }
+    };
+    this.gear = document.createElement('button');
+    this.gear.type = 'button';
+    this.gear.className = 'vr-gear';
+    this.gear.textContent = '⚙ 調整眼鏡';
+    this.gear.addEventListener('click', () => this.showSetup(this.setup.hidden));
+    stop(this.gear);
+    c.appendChild(this.gear);
+    this.setup = document.createElement('div');
+    this.setup.className = 'vr-setup';
+    this.setup.hidden = true;
+    this.setup.innerHTML = `
+      <div class="row"><span class="lbl">左右距離</span><button type="button" data-k="sep" data-d="-4">−</button><b data-v="sep"></b><button type="button" data-k="sep" data-d="4">＋</button></div>
+      <div class="row"><span class="lbl">畫面大小</span><button type="button" data-k="zoom" data-d="-5">−</button><b data-v="zoom"></b><button type="button" data-k="zoom" data-d="5">＋</button></div>
+      <p>放進眼鏡看：兩個圓點重疊成一個、人物不重影就對了。兩個點分太開就按「左右距離 −」。</p>
+      <div class="row"><button type="button" data-k="reset">預設</button><button type="button" data-k="done" class="ok">完成</button><button type="button" data-k="exit">離開 VR</button></div>`;
+    this.setup.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const k = b.dataset.k, d = Number(b.dataset.d) || 0;
+      if (k === 'sep') this.cfg.sep = this.layout().sep + d;
+      else if (k === 'zoom') {
+        this.cfg.zoom = Math.max(0, Math.min(100, Math.round(this.viewer.getZoomLevel()) + d));
+        this.viewer.zoom(this.cfg.zoom);
+      } else if (k === 'reset') {
+        this.cfg = {};
+        if (this.zoomBefore != null) this.viewer.zoom(this.zoomBefore);
+      } else if (k === 'done') {
+        this.showSetup(false);
+        return;
+      } else if (k === 'exit') {
+        this.showSetup(false);
+        this.stereo.stop();
+        return;
+      }
+      saveVrCfg(this.cfg);
+      this.viewer.needsUpdate();
+      this.showSetup(true);
+    });
+    stop(this.setup);
+    c.appendChild(this.setup);
+  }
+
+  showSetup(show) {
+    this.setup.hidden = !show;
+    if (!show) return;
+    const L = this.layout();
+    this.setup.querySelector('[data-v="sep"]').textContent = L.sep === L.def ? `${L.sep}（預設）` : String(L.sep);
+    this.setup.querySelector('[data-v="zoom"]').textContent = String(Math.round(this.viewer.getZoomLevel()));
+  }
+
+  setOn(on) {
+    this.on = on;
+    document.body.classList.toggle('vr-on', on);
+    this.viewer.container.classList.toggle('vr-active', on);
+    this.gaze = null;
+    this.elapsed = 0;
+    this.last = 0;
+    this.cool = performance.now() + 800;
+    this.needRelease = true;
+    this.progress(0, false);
+    this.nav.hideCursor?.();
+    if (on) {
+      this.viewer.renderer.setCustomRenderer((r) => this.effect(r));
+      this.zoomBefore = this.viewer.getZoomLevel();
+      if (this.cfg.zoom != null) this.viewer.zoom(this.cfg.zoom);
+    } else {
+      this.showSetup(false);
+      if (this.zoomBefore != null) this.viewer.zoom(this.zoomBefore);
+    }
+    this.nav.refresh();
+    if (on) requestAnimationFrame(this.loop);
+  }
+
+  /* VR 裡的標記：白圈（3D 圖層＋目的地名稱）和正下方的「離開 VR」 */
+  markersFor(scene) {
+    const list = [];
+    this.targets = [];
+    (scene.links || []).forEach((l, i) => {
+      const g = linkGeom(this.tour, scene, l);
+      const t = this.tour.scene(l.to);
+      if (!g || !t) return;
+      const yaw = rad(g.yaw);
+      const pitch = rad(Math.max(-45, Math.min(45, g.pitch)));
+      const dt = destScene(this.tour, scene, t);
+      const ta = this.tour.areaOf(dt.id);
+      const label = dt.name + (ta && ta !== this.tour.areaOf(scene.id) ? `（${ta.name}）` : '');
+      list.push({ id: 'vr-link-' + i, imageLayer: vrRing(label, Number(l.arrow) || 0), position: { yaw, pitch }, size: { width: 180, height: 225 }, data: { type: 'vr' } });
+      this.targets.push({ kind: 'link', link: l, yaw, pitch });
+    });
+    const yaw = this.viewer.getPosition().yaw;
+    this.exit = { kind: 'exit', yaw, pitch: VR_EXIT_PITCH };
+    list.push({ id: 'vr-exit', imageLayer: vrExitPlate(), position: { yaw, pitch: VR_EXIT_PITCH }, size: { width: 280, height: 123 }, rotation: { pitch: -VR_EXIT_PITCH }, data: { type: 'vr' } });
+    return list;
+  }
+
+  progress(p, hot) {
+    for (const r of this.reticles) {
+      r.querySelector('.fg').setAttribute('stroke-dasharray', `${Math.round(p * 100)} 100`);
+      r.classList.toggle('hot', !!hot);
+    }
+  }
+
+  loop(now) {
+    if (!this.on) return;
+    requestAnimationFrame(this.loop);
+    const dt = this.last ? Math.min(100, now - this.last) : 0;
+    this.last = now;
+    const L = this.layout();
+    this.reticles.forEach((r, i) => { const x = Math.round(L.cx[i]) + 'px'; if (r.style.left !== x) r.style.left = x; });
+    const p = this.viewer.getPosition();
+    /* 「離開 VR」跟著轉到面前的方向，低頭時字才是正的 */
+    if (p.pitch > rad(-45) && this.exit && Math.abs(p.yaw - this.exit.yaw) > 0.05 && now - (this.exitT || 0) > 300) {
+      this.exitT = now;
+      this.exit.yaw = p.yaw;
+      try {
+        this.markers.updateMarker({ id: 'vr-exit', position: { yaw: p.yaw, pitch: VR_EXIT_PITCH } }, false);
+        this.viewer.needsUpdate();
+      } catch (e) { /* 還沒建立 */ }
+    }
+    let best = null;
+    if (!this.nav.busy) {
+      if (p.pitch < rad(-65)) {
+        best = this.exit;
+      } else {
+        let bd = VR_HIT;
+        for (const t of this.targets) {
+          const d = angDist(p, t);
+          if (d < bd) { bd = d; best = t; }
+        }
+      }
+    }
+    /* 剛進 VR 或剛抵達時，要先把視線移開白圈一次，才開始計時（避免一抵達就又自動走） */
+    this.looking = best;
+    if (this.needRelease) {
+      if (!best && !this.nav.busy) this.needRelease = false;
+      best = null;
+    }
+    if (now < this.cool) best = null;
+    if (best !== this.gaze) {
+      this.gaze = best;
+      this.elapsed = 0;
+    } else if (best) {
+      this.elapsed += dt;
+    }
+    this.progress(best ? Math.min(1, this.elapsed / VR_DWELL) : 0, !!best);
+    if (best && this.elapsed >= VR_DWELL) {
+      this.gaze = null;
+      this.elapsed = 0;
+      this.act(best);
+    }
+  }
+
+  /* Cardboard 的按鈕：立刻選目前看著的目標 */
+  tap() {
+    if (this.gaze || this.looking) {
+      const t = this.gaze || this.looking;
+      this.gaze = null;
+      this.act(t);
+    } else {
+      this.viewer.notification.show({ content: '把中間的圓點對準白圈，看著約 1.5 秒就會走過去；低頭看「離開 VR」可以離開。', timeout: 3000 });
+    }
+  }
+
+  act(t) {
+    this.progress(0, false);
+    if (t.kind === 'exit') this.stereo.stop();
+    else this.walk(t.link);
+  }
+
+  /* VR 裡走過去：不轉動畫面（交給陀螺儀），淡入下一張，再把「現在看的方向」對到抵達方向 */
+  async walk(link) {
+    const nav = this.nav;
+    const from = nav.current;
+    const t = this.tour.scene(link.to);
+    if (!from || !t || nav.busy) return;
+    nav.busy = true;
+    this.cool = performance.now() + 1000;
+    try {
+      const arrive = arrivalPosition(this.tour, from, t, link);
+      this.markers.clearMarkers();
+      await this.viewer.setPanorama(nav.resolve(t.file), { caption: t.name, transition: { speed: 600, rotation: false, effect: 'fade' }, showLoader: true });
+      nav.current = t;
+      nav.arrivedBy = { from: from.id, index: (from.links || []).indexOf(link) };
+      this.face(arrive.yaw);
+      nav.refresh();
+      nav.onChange?.(t);
+      nav.preload(t);
+    } catch (e) {
+      console.error(e);
+      nav.refresh();
+    } finally {
+      nav.busy = false;
+      this.cool = performance.now() + 800;
+      this.needRelease = true;
+    }
+  }
+
+  /* 讓手機目前朝的方向對到 yaw（和陀螺儀外掛開始時的做法相同） */
+  face(yaw) {
+    const p = this.viewer.getPosition();
+    this.viewer.dynamics.position.setValue({ yaw, pitch: p.pitch });
+    if (this.gyro.controls) this.gyro.controls.alphaOffset = 0;
+    this.gyro.state.alphaOffset = null;
+    this.viewer.needsUpdate();
+  }
+}
+
 /* Photo Sphere Viewer 介面文字 */
 export const LANG = {
   zoom: '縮放', zoomOut: '縮小', zoomIn: '放大', fullscreen: '全螢幕', close: '關閉',
   twoFingers: '請用兩指移動畫面', ctrlZoom: '按住 Ctrl 再捲動可縮放', loadError: '全景圖載入失敗',
+  stereo: 'VR 眼鏡（Cardboard）', gyroscope: '陀螺儀',
+  stereoNotification: '看著白圈約 1.5 秒就會走過去；低頭看「離開 VR」或按返回鍵可以離開。',
+  pleaseRotate: '請把手機轉成橫向', tapToContinue: '（或點一下繼續）',
 };
